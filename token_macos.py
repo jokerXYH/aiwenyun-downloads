@@ -183,8 +183,8 @@ def launch_app(app: Path, port: int = DEBUG_PORT) -> None:
         [str(executable),
          '--remote-debugging-address=127.0.0.1',
          '--remote-debugging-port=%d' % port],
-        cwd=str(app), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        start_new_session=True)
+        cwd=str(executable.parent), stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 class CDPError(RuntimeError):

@@ -172,8 +172,12 @@ def output_folder() -> Path:
     for desktop in (home / 'Desktop', home / 'OneDrive' / 'Desktop'):
         if desktop.is_dir():
             folder = desktop / '爱问云邀请码'
-            folder.mkdir(parents=True, exist_ok=True)
-            return folder
+            try:
+                folder.mkdir(parents=True, exist_ok=True)
+                return folder
+            except OSError:
+                # macOS TCC / 权限受限时退回 Documents
+                continue
     folder = home / 'Documents' / '爱问云邀请码'
     folder.mkdir(parents=True, exist_ok=True)
     return folder
