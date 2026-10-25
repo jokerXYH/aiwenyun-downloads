@@ -26,7 +26,7 @@ python -m pip install --upgrade pip >/dev/null
 python -m pip install -r requirements.txt
 
 rm -rf build dist
-python -m PyInstaller --noconfirm --clean --onefile --windowed \
+python -m PyInstaller --noconfirm --clean --windowed \
   --name "$APP_NAME" \
   --icon app.icns \
   --add-data "app.icns:." \
@@ -57,8 +57,8 @@ if [ ! -d "$APP" ]; then
 fi
 
 # 版本号写进 Info.plist
-/usr/bin/plutil -replace CFBundleShortVersionString -string "2.0.0" "$APP/Contents/Info.plist" || true
-/usr/bin/plutil -replace CFBundleVersion -string "2.0.0" "$APP/Contents/Info.plist" || true
+/usr/bin/plutil -replace CFBundleShortVersionString -string "2.0.1" "$APP/Contents/Info.plist" || true
+/usr/bin/plutil -replace CFBundleVersion -string "2.0.1" "$APP/Contents/Info.plist" || true
 
 # 没有开发者证书时做 ad-hoc 签名；有证书时用 CODESIGN_IDENTITY。
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then
