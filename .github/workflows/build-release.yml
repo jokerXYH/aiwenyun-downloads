@@ -1,0 +1,107 @@
+name: Build Windows and macOS releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag, e.g. v2.0.0'
+        required: true
+        default: 'v2.0.0'
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Build exe
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed `
+            --name "爱问云邀请码导出2.0" `
+            --icon app.ico `
+            --add-data "app.ico;." `
+            --paths . `
+            --exclude-module numpy --exclude-module PIL --exclude-module lxml `
+            --exclude-module pandas --exclude-module scipy --exclude-module matplotlib `
+            --hidden-import gui --hidden-import pipeline --hidden-import token_source `
+            --hidden-import token_model --hidden-import token_windows `
+            --hidden-import net --hidden-import analyze `
+            --hidden-import matrix --hidden-import excel --hidden-import config `
+            run_gui.py
+          Copy-Item "dist\爱问云邀请码导出2.0.exe" "dist\aiwenyun-invite-windows-x64.exe"
+          Get-FileHash "dist\aiwenyun-invite-windows-x64.exe" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  aiwenyun-invite-windows-x64.exe" } |
+            Set-Content "dist\aiwenyun-invite-windows-x64.sha256" -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/aiwenyun-invite-windows-x64.exe
+            dist/aiwenyun-invite-windows-x64.sha256
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            arch: x64
+          - os: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build .app
+        run: |
+          chmod +x build_macos.command
+          ./build_macos.command
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            dist/aiwenyun-invite-macos-*.zip
+            dist/aiwenyun-invite-macos-*.sha256
+
+  release:
+    name: Publish release
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: List assets
+        run: ls -la dist
+      - name: Create / update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          name: 爱问云邀请码导出 ${{ github.event.inputs.version || github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,5 @@
+# 运行时依赖
+openpyxl>=3.1
+
+# 打包依赖（仅构建 exe 时需要）
+pyinstaller>=6.0
