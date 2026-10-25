@@ -340,6 +340,20 @@ class App:
 
 
 def main() -> int:
+    if '--smoke-test' in sys.argv:
+        # CI 用：验证打包后的 .app / exe 能加载 Tkinter、openpyxl 和业务模块。
+        import tkinter
+        from openpyxl import Workbook  # noqa: F401
+        import analyze  # noqa: F401
+        import matrix  # noqa: F401
+        import net  # noqa: F401
+        import pipeline  # noqa: F401
+        if sys.platform == 'darwin':
+            import token_macos  # noqa: F401
+        else:
+            import token_windows  # noqa: F401
+        print('smoke ok: Tk %s' % tkinter.TkVersion)
+        return 0
     app = App()
     if '--auto' in sys.argv:
         if '--no-open' in sys.argv:
