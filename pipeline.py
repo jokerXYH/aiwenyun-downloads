@@ -17,18 +17,20 @@ import csv
 import json
 import os
 import random
+import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
 from analyze import (enrich_row, format_time, live_info_map, normalize_groups)
-from config import (DEFAULT_RATE, DEFAULT_SCAN_TIMEOUT, DEFAULT_TIMEOUT,
-                    DEFAULT_WORKERS, discover_base_urls, normalize_base_url,
-                    output_folder)
+from config import (APP_NAME, APP_VERSION, DEFAULT_CLASS_DEADLINE,
+                    DEFAULT_RATE, DEFAULT_RETRY_BUDGET, DEFAULT_SCAN_TIMEOUT,
+                    DEFAULT_STALL_TIMEOUT, DEFAULT_TIMEOUT, DEFAULT_WORKERS,
+                    discover_base_urls, normalize_base_url, output_folder)
 from excel import write_workbook
 from matrix import build_matrices, course_from_topic, lesson_from_topic, normalize_items
 from net import (ApiError, ApiSession, AuthError, NetworkError, RateLimitError,
@@ -69,6 +71,10 @@ class ExportOptions:
     scan_timeout: float = DEFAULT_SCAN_TIMEOUT
     timeout: float = DEFAULT_TIMEOUT
     allow_restart: bool = False
+    class_deadline: float = DEFAULT_CLASS_DEADLINE
+    stall_timeout: float = DEFAULT_STALL_TIMEOUT
+    retry_budget: float = DEFAULT_RETRY_BUDGET
+    diagnostics: bool = True
 
 
 @dataclass
@@ -86,6 +92,7 @@ class ExportSummary:
     rows: list[dict[str, Any]] = field(default_factory=list)
     csv_path: Path | None = None
     json_path: Path | None = None
+    diagnostics_path: Path | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -101,6 +108,7 @@ class ExportSummary:
             'conflicts': self.conflicts,
             'csv': str(self.csv_path) if self.csv_path else None,
             'json': str(self.json_path) if self.json_path else None,
+            'diagnostics': str(self.diagnostics_path) if self.diagnostics_path else None,
         }
 
 
@@ -158,6 +166,7 @@ class TokenState:
                             allow_restart=self.allow_restart,
                             on_event=self.on_event,
                             cancel_event=self.cancel_event,
+                            full=(attempt > 0),
                         )
                         session, candidate = authenticate(
                             self.base_urls, batch.candidates, timeout=self.timeout)
@@ -185,6 +194,8 @@ class TokenState:
 
     def close(self) -> None:
         with self._lock:
+            self._auth_failed = True
+            self._last_error = '会话已关闭'
             sessions = list(self._sessions)
             self._sessions.clear()
         for session in sessions:
@@ -200,6 +211,32 @@ def _emit(callback: Callable[[str, Any], None] | None,
         callback(kind, payload)
 
 
+class Cooldown:
+    """全局冷却闸门：某个请求超时/被限流时，让所有线程一起缓一缓再重试。"""
+
+    def __init__(self) -> None:
+        self._until = 0.0
+        self._lock = threading.Lock()
+
+    def pause(self, seconds: float) -> None:
+        if seconds <= 0:
+            return
+        with self._lock:
+            self._until = max(self._until, time.monotonic() + seconds)
+
+    def wait(self, cancel_event: threading.Event | None = None) -> None:
+        while True:
+            with self._lock:
+                remaining = self._until - time.monotonic()
+            if remaining <= 0:
+                return
+            if cancel_event is not None:
+                if cancel_event.wait(min(remaining, 0.5)):
+                    return
+            else:
+                time.sleep(min(remaining, 0.5))
+
+
 def _call_with_refresh(state: TokenState, function: Callable[[ApiSession], Any]):
     last_error: Exception | None = None
     for _ in range(2):
@@ -213,24 +250,55 @@ def _call_with_refresh(state: TokenState, function: Callable[[ApiSession], Any])
 
 
 def _fetch_one(state: TokenState, row: dict[str, Any], bucket: TokenBucket,
-               cancel_event: threading.Event) -> dict[str, Any]:
+               cancel_event: threading.Event,
+               cooldown: Cooldown | None = None,
+               class_deadline: float | None = None,
+               max_attempts: int = 3) -> dict[str, Any]:
+    """抓一个课堂的邀请码。
+
+    三条硬约束，专门对付「爬到一半卡住」：
+    1. 每个课堂有总截止时间（默认 22 秒），到点立刻放弃，不无限重试；
+    2. 单次请求 socket 超时 6 秒 + 线程看门狗，半死连接最多卡 6 秒出头；
+    3. 网络类失败会让全局冷却闸门暂停一下，避免 8 个线程一起重试把链路打爆。
+    """
+
+    started = time.monotonic()
+    deadline = started + (class_deadline or DEFAULT_CLASS_DEADLINE)
     code = ''
     note = ''
-    attempts = 4
-    for attempt in range(attempts):
+    attempts = 0
+    errors: list[str] = []
+
+    while attempts < max_attempts:
         if cancel_event.is_set():
             note = '已取消'
+            break
+        if time.monotonic() >= deadline:
+            note = note or '请求超时'
             break
         session, generation = _safe_current(state)
         if session is None:
             note = _safe_auth_message(state)
             break
+        if cooldown is not None:
+            cooldown.wait(cancel_event)
+            if cancel_event.is_set():
+                note = '已取消'
+                break
         try:
             bucket.acquire(cancel_event)
-            code = session.fetch_invite_code(row['id'])
+        except ApiError:
+            note = '已取消'
+            break
+
+        attempts += 1
+        try:
+            code = session.fetch_invite_code(row['id'], deadline=deadline)
             note = ''
             break
         except TokenExpired:
+            errors.append('token')
+            note = '登录态过期'
             try:
                 state.refresh(generation)
                 note = '登录态已刷新，重试中'
@@ -239,20 +307,30 @@ def _fetch_one(state: TokenState, row: dict[str, Any], bucket: TokenBucket,
                 note = redact(error)
                 break
         except RateLimitError as error:
+            errors.append('rate')
             note = redact(error)
-            _sleep_backoff(attempt, error.retry_after, cancel_event)
+            pause = max(float(error.retry_after or 0), 1.0)
+            if cooldown is not None:
+                cooldown.pause(pause)
+            else:
+                _sleep_backoff(attempts - 1, error.retry_after, cancel_event)
             continue
         except NetworkError as error:
+            errors.append('network')
             note = redact(error)
-            _sleep_backoff(attempt, 0.0, cancel_event)
+            if cooldown is not None:
+                cooldown.pause(0.7 + random.uniform(0, 0.6))
+            _sleep_backoff(attempts - 1, 0.0, cancel_event)
             continue
         except ApiError as error:
+            errors.append('api')
             note = redact(error)
-            if attempt < 1:
-                _sleep_backoff(attempt, 0.0, cancel_event)
-                continue
-            break
+            if attempts >= 2:
+                break
+            _sleep_backoff(attempts - 1, 0.0, cancel_event)
+            continue
         except Exception as error:  # 防御性兜底，避免单条异常终止整个导出
+            errors.append('unexpected')
             note = redact(error)
             break
 
@@ -269,6 +347,11 @@ def _fetch_one(state: TokenState, row: dict[str, Any], bucket: TokenBucket,
         'teacher': row.get('teacher') or '',
         'orgId': row.get('orgId'),
         'begin': row.get('begin') or 0,
+        '_diag': {
+            'attempts': attempts,
+            'elapsed': round(time.monotonic() - started, 3),
+            'errors': errors,
+        },
     }
 
 
@@ -298,41 +381,163 @@ def _sleep_backoff(attempt: int, retry_after: float,
 def fetch_invites(state: TokenState, rows: list[dict[str, Any]],
                   options: ExportOptions,
                   on_progress: Callable[[int, int, dict[str, Any]], None] | None = None,
-                  cancel_event: threading.Event | None = None
+                  cancel_event: threading.Event | None = None,
+                  fetch_one: Callable[..., dict[str, Any]] = _fetch_one,
+                  on_stats: Callable[[dict[str, Any]], None] | None = None,
                   ) -> tuple[list[dict[str, Any]], bool]:
+    """并发抓取 + 卡住看门狗 + 失败课堂第二轮串行重试。"""
+
     cancel_event = cancel_event or threading.Event()
     workers = max(1, min(int(options.workers or DEFAULT_WORKERS), 16))
     bucket = TokenBucket(rate=max(1.0, options.rate), burst=workers)
+    cooldown = Cooldown()
     results: list[dict[str, Any] | None] = [None] * len(rows)
     canceled = False
+    stalled = False
+    first_started = time.monotonic()
+
     executor = ThreadPoolExecutor(max_workers=workers,
                                   thread_name_prefix='invite')
-    future_map = {
-        executor.submit(_fetch_one, state, row, bucket, cancel_event): index
+    futures = {
+        executor.submit(fetch_one, state, row, bucket, cancel_event,
+                        cooldown=cooldown,
+                        class_deadline=options.class_deadline): index
         for index, row in enumerate(rows)
     }
+    pending = set(futures)
+    last_progress = first_started
     try:
-        for future in as_completed(future_map):
-            index = future_map[future]
-            try:
-                record = future.result()
-            except Exception as error:
-                record = _fallback_record(rows[index], redact(error))
-            results[index] = record
-            if on_progress is not None:
-                done = sum(1 for item in results if item is not None)
-                on_progress(done, len(rows), record)
-            if cancel_event.is_set() and not canceled:
+        while pending:
+            done, pending = wait(pending, timeout=0.5,
+                                 return_when=FIRST_COMPLETED)
+            for future in done:
+                index = futures[future]
+                try:
+                    record = future.result()
+                except Exception as error:
+                    record = _fallback_record(rows[index], redact(error))
+                results[index] = record
+                last_progress = time.monotonic()
+                if on_progress is not None:
+                    done_count = sum(1 for item in results if item is not None)
+                    on_progress(done_count, len(rows), record)
+
+            if cancel_event.is_set():
                 canceled = True
-                for pending in future_map:
-                    pending.cancel()
+                for future in pending:
+                    future.cancel()
+                break
+
+            # 看门狗：超过 stall_timeout 一个课堂都没完成，判定为链路卡死
+            if pending and time.monotonic() - last_progress > options.stall_timeout:
+                stalled = True
+                for future in pending:
+                    future.cancel()
+                break
     finally:
-        executor.shutdown(wait=True, cancel_futures=True)
-    if cancel_event.is_set():
-        canceled = True
+        executor.shutdown(wait=not stalled, cancel_futures=True)
+
     for index, record in enumerate(results):
         if record is None:
-            results[index] = _fallback_record(rows[index], '已取消')
+            note = '已取消' if cancel_event.is_set() else (
+                '等待超时' if stalled else '未完成')
+            results[index] = _fallback_record(rows[index], note)
+
+    first_elapsed = time.monotonic() - first_started
+    first_success = sum(1 for item in results if item and item.get('code'))
+    first_failed = len(results) - first_success
+
+    # 第二轮：只重试第一轮失败的课堂，串行 + 冷却，避免再次并发雪崩
+    retry_attempted = 0
+    retry_recovered = 0
+    retry_started = time.monotonic()
+    failed_count = sum(1 for item in results if item and not item.get('code'))
+    # 卡住时如果只剩个别课堂，仍值得串行再试一次；大面积失败就不硬撑了
+    may_retry = ((not stalled) or failed_count <= 3) and options.retry_budget > 0
+    if may_retry and not cancel_event.is_set():
+        retry_indices = [
+            index for index, item in enumerate(results)
+            if item is not None and not item.get('code')
+            and '已取消' not in (item.get('note') or '')
+            and '登录态刷新失败' not in (item.get('note') or '')
+            and '登录态失效' not in (item.get('note') or '')
+        ]
+        for index in retry_indices:
+            if time.monotonic() - retry_started >= options.retry_budget:
+                break
+            if cancel_event.is_set():
+                canceled = True
+                break
+            retry_attempted += 1
+            record = fetch_one(
+                state, rows[index], bucket, cancel_event,
+                cooldown=cooldown,
+                class_deadline=min(12.0, options.class_deadline),
+                max_attempts=2,
+            )
+            results[index] = record
+            if record.get('code'):
+                retry_recovered += 1
+            if on_progress is not None:
+                done_count = sum(1 for item in results if item is not None)
+                on_progress(done_count, len(rows), record)
+            cancel_event.wait(0.6)
+
+    if cancel_event.is_set():
+        canceled = True
+
+    latencies = sorted(
+        item['_diag']['elapsed'] for item in results
+        if item and item.get('_diag') and item['_diag'].get('elapsed')
+    )
+
+    def percentile(ratio: float) -> float:
+        if not latencies:
+            return 0.0
+        index = min(len(latencies) - 1,
+                    max(0, int(round(len(latencies) * ratio)) - 1))
+        return latencies[index]
+
+    attempts = [
+        item['_diag']['attempts'] for item in results
+        if item and item.get('_diag')
+    ]
+    stats = {
+        'total': len(results),
+        'stalled': stalled,
+        'firstPass': {
+            'elapsed': round(first_elapsed, 2),
+            'success': first_success,
+            'failed': first_failed,
+        },
+        'retry': {
+            'attempted': retry_attempted,
+            'recovered': retry_recovered,
+            'elapsed': round(time.monotonic() - retry_started, 2),
+        },
+        'latency': {
+            'p50': round(percentile(0.50), 3),
+            'p95': round(percentile(0.95), 3),
+            'max': round(latencies[-1], 3) if latencies else 0.0,
+        },
+        'attempts': {
+            'avg': round(sum(attempts) / len(attempts), 2) if attempts else 0,
+            'max': max(attempts) if attempts else 0,
+        },
+        'failures': [
+            {
+                'classId': item.get('classId'),
+                'topic': item.get('topic'),
+                'note': item.get('note'),
+                'attempts': (item.get('_diag') or {}).get('attempts', 0),
+                'elapsed': (item.get('_diag') or {}).get('elapsed', 0),
+            }
+            for item in results if item and not item.get('code')
+        ],
+    }
+    if on_stats is not None:
+        on_stats(stats)
+
     return [item for item in results if item is not None], canceled
 
 
@@ -350,6 +555,7 @@ def _fallback_record(row: dict[str, Any], note: str) -> dict[str, Any]:
         'teacher': row.get('teacher') or '',
         'orgId': row.get('orgId'),
         'begin': row.get('begin') or 0,
+        '_diag': {'attempts': 0, 'elapsed': 0.0, 'errors': []},
     }
 
 
@@ -359,6 +565,10 @@ def run_export(options: ExportOptions | None = None,
     options = options or ExportOptions()
     cancel_event = cancel_event or threading.Event()
     started = time.monotonic()
+    timings: dict[str, float] = {}
+
+    def mark(name: str, since: float) -> None:
+        timings[name] = round(time.monotonic() - since, 2)
 
     def check_cancel() -> None:
         if cancel_event.is_set():
@@ -376,21 +586,26 @@ def run_export(options: ExportOptions | None = None,
         _emit(on_event, 'phase', '正在读取登录态（免重启，只读内存）…')
 
     try:
+        scan_started = time.monotonic()
         batch = acquire_tokens(
             scan_timeout=options.scan_timeout,
             allow_restart=options.allow_restart,
             on_event=on_event,
             cancel_event=cancel_event,
         )
+        mark('scan', scan_started)
     except TokenScanError as error:
         raise PipelineError(redact(error)) from error
 
     info = batch.info or {}
+    scan_info = dict(info)
+    scan_info['candidates'] = len(batch.candidates)
     if info.get('method') == 'memory':
+        suffix = '（快速扫描）' if info.get('partial') else ''
         _emit(on_event, 'log',
-              '扫描 %s 个客户端进程 / %s MB 内存，找到 %d 个候选登录态，用时 %ss' % (
+              '扫描 %s 个客户端进程 / %s MB 内存，找到 %d 个候选登录态，用时 %ss%s' % (
                   info.get('processes', '?'), info.get('mb', '?'),
-                  len(batch.candidates), info.get('elapsed', '?')))
+                  len(batch.candidates), info.get('elapsed', '?'), suffix))
     else:
         _emit(on_event, 'log',
               '已通过 CDP 读取登录态（客户端：%s，重启：%s）' % (
@@ -415,15 +630,42 @@ def run_export(options: ExportOptions | None = None,
     check_cancel()
     _emit(on_event, 'phase', '正在验证登录态…')
     state = None
-    try:
-        state = TokenState(
-            acquire_tokens, base_urls, batch,
+
+    def build_state(current_batch):
+        return TokenState(
+            acquire_tokens, base_urls, current_batch,
             timeout=options.timeout,
             scan_timeout=options.scan_timeout,
             allow_restart=options.allow_restart,
             on_event=on_event,
             cancel_event=cancel_event,
         )
+
+    try:
+        auth_started = time.monotonic()
+        try:
+            state = build_state(batch)
+        except AuthError:
+            info_now = batch.info or {}
+            if info_now.get('method') != 'memory' or info_now.get('full'):
+                raise
+            # 快速扫描只看了第一个有 token 的进程，候选失效时再做完整扫描
+            _emit(on_event, 'log', '快速扫描到的登录态不可用，重新完整扫描…')
+            batch = acquire_tokens(
+                scan_timeout=options.scan_timeout,
+                allow_restart=options.allow_restart,
+                on_event=on_event,
+                cancel_event=cancel_event,
+                full=True,
+            )
+            scan_info.update(batch.info or {})
+            scan_info['candidates'] = len(batch.candidates)
+            _emit(on_event, 'log',
+                  '完整扫描：%s 个进程 / %s MB，%s 个候选，用时 %ss' % (
+                      scan_info.get('processes', '?'), scan_info.get('mb', '?'),
+                      scan_info.get('candidates', '?'), scan_info.get('elapsed', '?')))
+            state = build_state(batch)
+        mark('auth', auth_started)
         meta = state.metadata
         _emit(on_event, 'log', '登录态有效：%s（用户 %s，版本 %s，签发时间 %s）' % (
             state.session.base_url,
@@ -434,19 +676,26 @@ def run_export(options: ExportOptions | None = None,
         if state is not None:
             state.close()
         raise PipelineError(redact(error)) from error
+    except TokenScanError as error:
+        if state is not None:
+            state.close()
+        raise PipelineError(redact(error)) from error
 
     try:
         check_cancel()
         _emit(on_event, 'phase', '正在读取课堂列表…')
+        timetable_started = time.monotonic()
         start_ms = int(time.time() * 1000) - max(0, options.past_days) * DAY_MS
         rows = _call_with_refresh(
             state, lambda session: session.fetch_timetable(start_ms))
+        mark('timetable', timetable_started)
         if not rows:
             raise NoClassesError('没有找到实时课堂（这个账号可能还没有排课）。')
         _emit(on_event, 'log', '共 %d 个实时课堂' % len(rows))
 
         check_cancel()
         _emit(on_event, 'phase', '正在补充课堂详情…')
+        details_started = time.monotonic()
         try:
             details = _call_with_refresh(
                 state, lambda session: session.fetch_live_info(
@@ -456,28 +705,44 @@ def run_export(options: ExportOptions | None = None,
             _emit(on_event, 'log', '已补充 %d 个课堂详情' % len(details_map))
         except (ApiError, NetworkError) as error:
             _emit(on_event, 'log', '课堂详情获取失败，使用课程表原始字段：%s' % redact(error))
+        mark('details', details_started)
 
         _emit(on_event, 'phase', '正在取邀请码…')
+        invites_started = time.monotonic()
+        invites_stats: dict[str, Any] = {}
         results, canceled = fetch_invites(
             state, rows, options,
             on_progress=lambda done, total, record: _emit(
                 on_event, 'progress', {'done': done, 'total': total, 'record': record}),
-            cancel_event=cancel_event)
+            cancel_event=cancel_event,
+            on_stats=lambda stats: invites_stats.update(stats))
+        mark('invites', invites_started)
+        if invites_stats.get('stalled'):
+            _emit(on_event, 'log',
+                  '邀请码阶段长时间没有响应，已触发卡住保护并提前收尾')
+        recovered = (invites_stats.get('retry') or {}).get('recovered') or 0
+        if recovered:
+            _emit(on_event, 'log', '第二轮重试补回 %d 个邀请码' % recovered)
         success = sum(1 for item in results if item.get('code'))
         _emit(on_event, 'log', '邀请码完成：成功 %d / %d' % (success, len(results)))
 
         if not canceled:
             check_cancel()
         _emit(on_event, 'phase', '正在生成 Excel…')
-        items = normalize_items(results)
+        public_results = [
+            {key: value for key, value in item.items() if key != '_diag'}
+            for item in results
+        ]
+        items = normalize_items(public_results)
         matrices = build_matrices(items)
         out_dir = Path(options.out_dir) if options.out_dir else output_folder()
         filename = '邀请码-%s.xlsx' % datetime.now().strftime('%Y%m%d-%H%M%S')
         output_path = out_dir / filename
         details_rows = sorted(
-            results,
+            public_results,
             key=lambda item: (item.get('course') or '', item.get('lesson') or 0))
         meta = state.metadata
+        excel_started = time.monotonic()
         path = write_workbook(
             output_path, matrices,
             details=details_rows if options.include_details else None,
@@ -486,12 +751,40 @@ def run_export(options: ExportOptions | None = None,
                 'client_version': meta.get('version') or '',
                 'base_url': state.session.base_url,
             })
+        mark('excel', excel_started)
 
         csv_path = json_path = None
         if options.write_csv:
-            csv_path = _write_csv(path.with_suffix('.csv'), results)
+            csv_path = _write_csv(path.with_suffix('.csv'), public_results)
         if options.write_json:
-            json_path = _write_json(path.with_suffix('.json'), results)
+            json_path = _write_json(path.with_suffix('.json'), public_results)
+
+        diagnostics_path = None
+        if options.diagnostics:
+            try:
+                diagnostics_path = _write_diagnostics(path, {
+                    'app': APP_NAME,
+                    'version': APP_VERSION,
+                    'exportedAt': datetime.now().isoformat(timespec='seconds'),
+                    'platform': sys.platform,
+                    'baseUrl': state.session.base_url,
+                    'clientVersion': meta.get('version') or '',
+                    'tokenIssuedAt': int(meta.get('issued_at') or 0),
+                    'timings': timings,
+                    'scan': scan_info,
+                    'invites': invites_stats,
+                    'failures': [
+                        {
+                            'classId': item.get('classId'),
+                            'topic': item.get('topic'),
+                            'note': item.get('note'),
+                        }
+                        for item in public_results if not item.get('code')
+                    ],
+                })
+                _emit(on_event, 'log', '诊断信息：%s' % diagnostics_path)
+            except OSError as error:
+                _emit(on_event, 'log', '诊断信息写入失败：%s' % error)
 
         summary = ExportSummary(
             path=path,
@@ -504,9 +797,10 @@ def run_export(options: ExportOptions | None = None,
             token_issued_at=int(meta.get('issued_at') or 0),
             canceled=canceled,
             conflicts=matrices[0].conflicts if matrices else [],
-            rows=results,
+            rows=public_results,
             csv_path=csv_path,
             json_path=json_path,
+            diagnostics_path=diagnostics_path,
         )
         _emit(on_event, 'done', summary)
         return summary
@@ -541,3 +835,14 @@ def _write_json(path: Path, results: list[dict[str, Any]]) -> Path:
     }, ensure_ascii=False, indent=2), encoding='utf-8')
     os.replace(temp, path)
     return path
+
+
+def _write_diagnostics(path: Path, payload: dict[str, Any]) -> Path:
+    """把本次导出的耗时/失败原因写到 Excel 旁边，方便排查别的机器卡住。"""
+
+    target = path.with_name(path.stem + '-诊断.json')
+    temp = target.with_name('.%s.tmp%s' % (target.stem, target.suffix))
+    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                    encoding='utf-8')
+    os.replace(temp, target)
+    return target

@@ -45,7 +45,7 @@ def client_running() -> bool:
 
 def acquire_tokens(scan_timeout: float = 8.0, allow_restart: bool = False,
                    on_event: Callable[[str, Any], None] | None = None,
-                   cancel_event=None) -> TokenBatch:
+                   cancel_event=None, full: bool = False) -> TokenBatch:
     if sys.platform == 'darwin':
         from token_macos import acquire_tokens as mac_acquire
         return mac_acquire(
@@ -54,7 +54,8 @@ def acquire_tokens(scan_timeout: float = 8.0, allow_restart: bool = False,
 
     from token_windows import ScanStats, scan_tokens
     stats = ScanStats()
-    candidates = scan_tokens(timeout=scan_timeout, stats=stats)
+    candidates = scan_tokens(timeout=scan_timeout, stats=stats,
+                             stop_after_first=not full)
     return TokenBatch(
         candidates=candidates,
         info={
@@ -63,5 +64,7 @@ def acquire_tokens(scan_timeout: float = 8.0, allow_restart: bool = False,
             'elapsed': round(stats.elapsed, 2),
             'regions': stats.regions,
             'method': 'memory',
+            'full': full,
+            'partial': stats.partial,
         },
     )

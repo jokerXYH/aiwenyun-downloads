@@ -61,6 +61,19 @@ class AnalyzeTests(unittest.TestCase):
         self.assertEqual(analyze.invite_code_from_payload(
             {'code': 0, 'obj': {'id': 123456, 'ts': 1792944444464}}), '')
 
+    def test_invite_lenient_shapes(self):
+        """服务端换字段/包一层时也能从 obj 里挑出唯一的 6 位码。"""
+        self.assertEqual(analyze.invite_code_from_payload(
+            {'code': 0, 'obj': '457288'}), '457288')
+        self.assertEqual(analyze.invite_code_from_payload(
+            {'code': 0, 'obj': {'value': '457288'}}), '457288')
+        self.assertEqual(analyze.invite_code_from_payload(
+            {'code': 0, 'obj': {'id': 123456, 'value': '457288'}}), '457288')
+        self.assertEqual(analyze.invite_code_from_payload(
+            {'code': 0, 'obj': {'detail': {'code': '457288'}}}), '457288')
+        self.assertEqual(analyze.invite_code_from_payload(
+            {'code': 0, 'obj': {'a': '111111', 'b': '222222'}}), '')
+
     def test_timetable_rows(self):
         rows = analyze.timetable_rows({
             'obj': {'total': 2, 'list': [
@@ -161,7 +174,7 @@ class FakeSession:
         self.codes = codes
         self.expired_once = False
 
-    def fetch_invite_code(self, class_id):
+    def fetch_invite_code(self, class_id, deadline=None):
         if self.expired_once:
             self.expired_once = False
             raise net.TokenExpired('expired')
@@ -220,6 +233,69 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(canceled)
         self.assertEqual(results[0]['code'], '')
         self.assertIn('取消', results[0]['note'])
+
+    def test_stall_watchdog_returns_partial(self):
+        """一个请求永远不返回时，不能把整次导出拖死。"""
+        rows = [{'id': 1, 'topic': 'A-1', 'begin': 1},
+                {'id': 2, 'topic': 'A-2', 'begin': 2}]
+        state = FakeState({1: '123456'})
+        release = threading.Event()
+        blocked = {'value': False}
+
+        def fake_fetch(fake_state, row, bucket, cancel_event,
+                       cooldown=None, class_deadline=None, max_attempts=3):
+            if row['id'] == 2 and not blocked['value']:
+                blocked['value'] = True
+                release.wait(5)
+            record = pipeline._fallback_record(row, '')
+            if row['id'] == 1:
+                record['code'] = '123456'
+            return record
+
+        options = pipeline.ExportOptions(
+            workers=2, rate=100, stall_timeout=0.4, retry_budget=0)
+        started = time.monotonic()
+        results, _ = pipeline.fetch_invites(
+            state, rows, options, fetch_one=fake_fetch)
+        elapsed = time.monotonic() - started
+        release.set()
+        time.sleep(0.1)
+        self.assertLess(elapsed, 3.0)
+        self.assertEqual(results[0]['code'], '123456')
+        self.assertEqual(results[1]['code'], '')
+        self.assertIn('超时', results[1]['note'])
+
+    def test_second_pass_retries_failures(self):
+        rows = [{'id': 1, 'topic': 'A-1', 'begin': 1}]
+        state = FakeState({1: '654321'})
+        calls = {'count': 0}
+
+        def fake_fetch(fake_state, row, bucket, cancel_event,
+                       cooldown=None, class_deadline=None, max_attempts=3):
+            calls['count'] += 1
+            record = pipeline._fallback_record(row, '网络失败')
+            if calls['count'] >= 2:
+                record['code'] = '654321'
+                record['note'] = ''
+            return record
+
+        stats = {}
+        options = pipeline.ExportOptions(
+            workers=1, rate=100, retry_budget=5)
+        results, _ = pipeline.fetch_invites(
+            state, rows, options, fetch_one=fake_fetch,
+            on_stats=lambda value: stats.update(value))
+        self.assertEqual(calls['count'], 2)
+        self.assertEqual(results[0]['code'], '654321')
+        self.assertEqual(stats['retry']['attempted'], 1)
+        self.assertEqual(stats['retry']['recovered'], 1)
+
+    def test_cooldown_pauses_all_workers(self):
+        cooldown = pipeline.Cooldown()
+        cooldown.pause(0.2)
+        started = time.monotonic()
+        cooldown.wait()
+        self.assertGreaterEqual(time.monotonic() - started, 0.18)
 
     def test_no_client(self):
         original_running = pipeline.client_running

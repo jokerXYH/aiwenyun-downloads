@@ -14,6 +14,7 @@ import http.client
 import json
 import random
 import re
+import socket
 import ssl
 import threading
 import time
@@ -22,8 +23,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 from analyze import invite_code_from_payload
-from config import (DEFAULT_TIMEOUT, INVITE_PATH, LIVE_INFO_PATH, TASK_TYPES,
-                    TIMETABLE_PATH, USER_AGENT)
+from config import (DEFAULT_INVITE_TIMEOUT, DEFAULT_TIMEOUT, INVITE_PATH,
+                    LIVE_INFO_PATH, TASK_TYPES, TIMETABLE_PATH, USER_AGENT)
 from token_model import TOKEN_RE
 
 _REDACT_PATTERNS = (
@@ -100,6 +101,22 @@ class HttpResponse:
     final_path: str
 
 
+def _abort_connection(connection: http.client.HTTPSConnection) -> None:
+    """看门狗：到点还没返回就强行断开，避免线程永远卡在读响应上。"""
+
+    sock = getattr(connection, 'sock', None)
+    if sock is None:
+        return
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+    try:
+        sock.close()
+    except OSError:
+        pass
+
+
 class HttpTransport:
     """线程本地连接池；每个工作线程复用自己的 HTTPS 连接。"""
 
@@ -137,14 +154,36 @@ class HttpTransport:
         self._drop_connection()
 
     def post_json(self, path: str, payload: dict[str, Any],
-                  headers: dict[str, str]) -> dict[str, Any]:
+                  headers: dict[str, str],
+                  deadline: float | None = None,
+                  request_timeout: float | None = None) -> dict[str, Any]:
         body = json.dumps(payload, ensure_ascii=False,
                           separators=(',', ':')).encode('utf-8')
         request_path = '%s/%s' % (self.prefix, path.lstrip('/'))
+        started = time.monotonic()
         last_error: Exception | None = None
         for attempt in range(2):
+            # deadline 是整次课堂抓取的总截止时间（monotonic 秒）
+            if deadline is not None and deadline - time.monotonic() < 0.5:
+                raise NetworkError('请求超时：%s' % path)
+            timeout = request_timeout or self.timeout
+            if deadline is not None:
+                timeout = max(0.8, min(timeout, deadline - time.monotonic()))
+            # 空闲超过 5 秒的连接可能已被服务端/WAF 悄悄关掉，直接换新连接，
+            # 避免复用半死连接时干等到 socket 超时（这就是“爬到一半卡住”的来源）。
+            last_used = getattr(self._local, 'last_used', 0.0)
+            if last_used and time.monotonic() - last_used > 5.0:
+                self._drop_connection()
             connection = self._connection()
+            connection.timeout = timeout
+            watchdog = threading.Timer(timeout + 1.2, _abort_connection,
+                                       args=(connection,))
+            watchdog.daemon = True
+            watchdog.start()
             try:
+                connection.connect()
+                if connection.sock is not None:
+                    connection.sock.settimeout(timeout)
                 connection.request('POST', request_path, body=body,
                                    headers=headers)
                 response = connection.getresponse()
@@ -168,7 +207,12 @@ class HttpTransport:
                 if attempt == 0:
                     continue
                 raise NetworkError(
-                    '请求失败：%s（%s）' % (path, redact(error))) from error
+                    '请求失败：%s（%s，%.1fs）' % (
+                        path, redact(error), time.monotonic() - started)) from error
+            finally:
+                self._local.last_used = time.monotonic()
+                if watchdog is not None:
+                    watchdog.cancel()
         raise NetworkError('请求失败：%s（%s）' % (path, redact(last_error)))
 
     @staticmethod
@@ -258,8 +302,12 @@ class ApiSession:
             headers['version'] = self.version
         return headers
 
-    def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.transport.post_json(path, payload, self.headers())
+    def post(self, path: str, payload: dict[str, Any],
+             deadline: float | None = None,
+             request_timeout: float | None = None) -> dict[str, Any]:
+        return self.transport.post_json(path, payload, self.headers(),
+                                        deadline=deadline,
+                                        request_timeout=request_timeout)
 
     def validate(self) -> None:
         """用一次最小请求验证 token 与主机是否匹配。"""
@@ -324,8 +372,11 @@ class ApiSession:
                 details[class_id] = item
         return details
 
-    def fetch_invite_code(self, class_id: int) -> str:
-        payload = self.post(INVITE_PATH, {'id': int(class_id)})
+    def fetch_invite_code(self, class_id: int,
+                          deadline: float | None = None) -> str:
+        payload = self.post(INVITE_PATH, {'id': int(class_id)},
+                            deadline=deadline,
+                            request_timeout=DEFAULT_INVITE_TIMEOUT)
         code = invite_code_from_payload(payload)
         if not code:
             raise ApiError('响应里没有 6 位邀请码')

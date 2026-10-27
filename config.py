@@ -24,8 +24,16 @@ CREATE_NO_WINDOW = 0x08000000
 
 DEFAULT_WORKERS = 8
 DEFAULT_RATE = 12.0
-DEFAULT_TIMEOUT = 15.0
+DEFAULT_TIMEOUT = 12.0
+# 邀请码单个请求的 socket 超时：正常 0.3s 左右，6 秒还没回就当链路卡了
+DEFAULT_INVITE_TIMEOUT = 6.0
 DEFAULT_SCAN_TIMEOUT = 8.0
+# 单个课堂最多折腾多久；超过就记为失败，交给第二轮重试
+DEFAULT_CLASS_DEADLINE = 22.0
+# 整轮长时间没有任何课堂完成时，判定为「卡住」，收尾并进入重试
+DEFAULT_STALL_TIMEOUT = 28.0
+# 第二轮重试的总时间预算
+DEFAULT_RETRY_BUDGET = 30.0
 
 TIMETABLE_PATH = 'gt/servlet/timeTable/getTimeTable'
 INVITE_PATH = 'gt/servlet/liveclass/invite'

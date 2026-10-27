@@ -21,6 +21,7 @@ class ScanStats:
     candidates: int = 0
     elapsed: float = 0.0
     denied_processes: int = 0
+    partial: bool = False
 
 
 class _MBI64(ctypes.Structure):
@@ -161,7 +162,14 @@ def _scan_pid(pid: int, deadline: float, chunk_size: int = 2 * 1024 * 1024,
 
 def scan_tokens(image: str = CLIENT_EXE,
                 timeout: float = DEFAULT_SCAN_TIMEOUT,
-                stats: ScanStats | None = None) -> list[TokenCandidate]:
+                stats: ScanStats | None = None,
+                stop_after_first: bool = True) -> list[TokenCandidate]:
+    """扫描客户端内存。
+
+    默认找到第一个进程里的候选 token 就停（主进程通常 0.1 秒内就有），
+    认证失败时调用方可以再用 ``stop_after_first=False`` 做完整扫描。
+    """
+
     started = time.monotonic()
     stats = stats or ScanStats()
     pids = list_client_pids(image)
@@ -173,9 +181,14 @@ def scan_tokens(image: str = CLIENT_EXE,
     deadline = started + max(1.0, timeout)
     all_candidates: dict[str, TokenCandidate] = {}
     for pid in pids:
-        for candidate in _scan_pid(pid, deadline, stats=stats):
+        found_here = _scan_pid(pid, deadline, stats=stats)
+        for candidate in found_here:
             all_candidates.setdefault(candidate.value, candidate)
+        if found_here and stop_after_first and all_candidates:
+            stats.partial = True
+            break
         if time.monotonic() > deadline and all_candidates:
+            stats.partial = True
             break
 
     stats.elapsed = time.monotonic() - started

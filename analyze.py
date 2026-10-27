@@ -22,6 +22,13 @@ _TOPIC_KEYS = ('topic', 'title', 'name', 'className', 'courseName')
 _BEGIN_KEYS = ('beginTime', 'startTime', 'begin')
 _END_KEYS = ('endTime', 'end')
 
+# 宽松兜底时忽略这些字段：它们本来就可能恰好是 6 位数字
+_SIX_DIGIT_IGNORE_KEYS = {
+    'id', 'taskid', 'classid', 'liveid', 'courseid', 'userid', 'orgid',
+    'teacher', 'reqid', 'reqtime', 'exectime', 'ts', 'timestamp',
+    'begintime', 'endtime', 'starttime', 'status', 'type',
+}
+
 
 def normalize_digits(text: str) -> str:
     return FULLWIDTH_RE.sub(lambda ch: chr(ord(ch.group(0)) - 65248), text or '')
@@ -55,11 +62,39 @@ def _clean_code(value: Any) -> str:
     return ''
 
 
+def _six_digit_values(value: Any, depth: int = 0,
+                      found: set[str] | None = None) -> set[str]:
+    """宽松收集：忽略 ID/时间戳等字段后，剩下唯一的 6 位数字就认为是邀请码。"""
+
+    if found is None:
+        found = set()
+    if depth > 6:
+        return found
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key).lower() in _SIX_DIGIT_IGNORE_KEYS:
+                continue
+            _six_digit_values(item, depth + 1, found)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _six_digit_values(item, depth + 1, found)
+    elif isinstance(value, int) and not isinstance(value, bool):
+        text = str(value)
+        if CODE_VALUE_RE.fullmatch(text):
+            found.add(text)
+    elif isinstance(value, str):
+        text = normalize_digits(value).strip()
+        if CODE_VALUE_RE.fullmatch(text):
+            found.add(text)
+    return found
+
+
 def invite_code_from_payload(payload: Any) -> str:
-    """优先读取结构化字段，取不到再用带标签的正则兜底。
+    """优先读取结构化字段，取不到再用宽松规则兜底。
 
     正常响应：``{"code":0,"obj":{"code":"457288"}}``
-    ``obj`` 也可能是列表（批量接口）。
+    ``obj`` 也可能是列表、裸字符串，或换了字段名的对象；服务端改版时
+    只要响应里唯一像邀请码的 6 位数字还在，这里就能取出来。
     """
 
     if isinstance(payload, dict):
@@ -72,6 +107,12 @@ def invite_code_from_payload(payload: Any) -> str:
                     code = _clean_code(item.get(key))
                     if code:
                         return code
+
+        # 宽松兜底：obj/data 里忽略 ID、时间等字段后只剩一个 6 位数字
+        for container in (payload.get('obj'), payload.get('data')):
+            values = _six_digit_values(container)
+            if len(values) == 1:
+                return values.pop()
 
     # 兜底：只匹配 "邀请码...123456" 或 "inviteCode": "123456" 这类明确语义，
     # 不会把时间戳、ID 等普通 6 位数字误认成邀请码。
