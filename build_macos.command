@@ -1,10 +1,10 @@
 #!/bin/bash
-# 在 macOS 上构建「爱问云邀请码导出 2.0.app」。
+# 在 macOS 上构建「爱问云邀请码导出.app」。
 # 用法：双击本文件，或在终端执行 ./build_macos.command
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="爱问云邀请码导出2.0"
+APP_NAME="爱问云邀请码导出"
 PYTHON="${PYTHON:-python3}"
 
 if ! command -v "$PYTHON" >/dev/null 2>&1; then
@@ -57,8 +57,8 @@ if [ ! -d "$APP" ]; then
 fi
 
 # 版本号写进 Info.plist
-/usr/bin/plutil -replace CFBundleShortVersionString -string "2.0.1" "$APP/Contents/Info.plist" || true
-/usr/bin/plutil -replace CFBundleVersion -string "2.0.1" "$APP/Contents/Info.plist" || true
+/usr/bin/plutil -replace CFBundleShortVersionString -string "2.1.0" "$APP/Contents/Info.plist" || true
+/usr/bin/plutil -replace CFBundleVersion -string "2.1.0" "$APP/Contents/Info.plist" || true
 
 # 没有开发者证书时做 ad-hoc 签名；有证书时用 CODESIGN_IDENTITY。
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then

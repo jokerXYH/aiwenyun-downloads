@@ -145,7 +145,7 @@ def write_workbook(path: Path, matrices: list[Matrix],
         _fill_detail_sheet(sheet, details)
 
     metadata = metadata or {}
-    workbook.properties.creator = '爱问云邀请码导出 2.0'
+    workbook.properties.creator = '爱问云邀请码导出'
     workbook.properties.title = '邀请码'
     workbook.properties.description = (
         '导出时间：%s；客户端：%s；接口主机：%s' % (

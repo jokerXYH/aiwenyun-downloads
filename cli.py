@@ -14,7 +14,7 @@ from pipeline import (Cancelled, ExportOptions, NoClassesError, PipelineError,
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='aiwenyun-export',
-        description='爱问云邀请码导出 2.0（免重启、并发、只读登录态）')
+        description='爱问云邀请码导出（免重启、并发、只读登录态）')
     parser.add_argument('--out', default='', help='输出目录，默认桌面\\爱问云邀请码')
     parser.add_argument('--past-days', type=int, default=0,
                         help='从几天前开始列课堂（0=从现在）')

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, e.g. v2.0.1'
+        description: 'Release tag, e.g. v2.1.0'
         required: true
-        default: 'v2.0.1'
+        default: 'v2.1.0'
   push:
     tags:
       - 'v*'
@@ -33,7 +33,7 @@ jobs:
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
-            --name "爱问云邀请码导出2.0" `
+            --name "爱问云邀请码导出" `
             --icon app.ico `
             --add-data "app.ico;." `
             --paths . `
@@ -44,7 +44,7 @@ jobs:
             --hidden-import net --hidden-import analyze `
             --hidden-import matrix --hidden-import excel --hidden-import config `
             run_gui.py
-          Copy-Item "dist\爱问云邀请码导出2.0.exe" "dist\aiwenyun-invite-windows-x64.exe"
+          Copy-Item "dist\爱问云邀请码导出.exe" "dist\aiwenyun-invite-windows-x64.exe"
           Get-FileHash "dist\aiwenyun-invite-windows-x64.exe" -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  aiwenyun-invite-windows-x64.exe" } |
             Set-Content "dist\aiwenyun-invite-windows-x64.sha256" -Encoding ascii
@@ -88,7 +88,7 @@ jobs:
           ./build_macos.command
       - name: Smoke test .app
         run: |
-          APP="dist/爱问云邀请码导出2.0.app"
+          APP="dist/爱问云邀请码导出.app"
           BIN="$(find "$APP/Contents/MacOS" -type f -perm -111 | head -n1)"
           echo "binary: $BIN"
           "$BIN" --smoke-test

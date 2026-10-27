@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 pyinstaller --noconfirm --clean --onefile --windowed ^
-  --name "爱问云邀请码导出2.0" ^
+  --name "爱问云邀请码导出" ^
   --icon app.ico ^
   --add-data "app.ico;." ^
   --paths . ^
@@ -26,5 +26,5 @@ pyinstaller --noconfirm --clean --onefile --windowed ^
   run_gui.py
 
 echo.
-echo 输出：dist\爱问云邀请码导出2.0.exe
+echo 输出：dist\爱问云邀请码导出.exe
 pause
