@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -308,6 +310,47 @@ class PipelineTests(unittest.TestCase):
         finally:
             pipeline.client_running = original_running
             pipeline.platform_name = original_platform
+
+
+class MacLaunchTests(unittest.TestCase):
+    def test_launch_app_uses_open_with_debug_args(self):
+        import token_macos
+
+        app = Path('/Applications/AiCloud.app')
+        with patch.object(
+                token_macos, '_bundle_executable',
+                return_value=app / 'Contents/MacOS/AiCloud'), \
+                patch.object(token_macos.time, 'sleep'), \
+                patch.object(token_macos.subprocess, 'run') as run:
+            run.return_value = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout='', stderr='')
+            token_macos.launch_app(app)
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[:4], ['open', '-a', str(app), '--args'])
+        self.assertIn('--remote-debugging-address=127.0.0.1', command)
+        self.assertIn('--remote-debugging-port=9222', command)
+
+    def test_restore_app_uses_open_without_debug_args(self):
+        import token_macos
+
+        app = Path('/Applications/AiCloud.app')
+        with patch.object(token_macos, 'quit_app') as quit_app, \
+                patch.object(token_macos.subprocess, 'run') as run:
+            token_macos.restore_app(app)
+
+        quit_app.assert_called_once_with(app)
+        self.assertEqual(run.call_args.args[0], ['open', '-a', str(app)])
+
+    def test_pipeline_restores_macos_client(self):
+        import token_macos
+
+        with patch.object(pipeline.sys, 'platform', 'darwin'), \
+                patch.object(token_macos, 'restore_app') as restore:
+            pipeline._restore_macos_client(
+                {'restarted': True, 'app': '/Applications/AiCloud.app'}, None)
+
+        restore.assert_called_once_with(Path('/Applications/AiCloud.app'))
 
 
 if __name__ == '__main__':

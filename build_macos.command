@@ -59,8 +59,8 @@ if [ ! -d "$APP" ]; then
 fi
 
 # 版本号写进 Info.plist
-/usr/bin/plutil -replace CFBundleShortVersionString -string "2.1.1" "$APP/Contents/Info.plist" || true
-/usr/bin/plutil -replace CFBundleVersion -string "2.1.1" "$APP/Contents/Info.plist" || true
+/usr/bin/plutil -replace CFBundleShortVersionString -string "2.1.2" "$APP/Contents/Info.plist" || true
+/usr/bin/plutil -replace CFBundleVersion -string "2.1.2" "$APP/Contents/Info.plist" || true
 
 # 没有开发者证书时做 ad-hoc 签名；有证书时用 CODESIGN_IDENTITY。
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then

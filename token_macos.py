@@ -3,9 +3,10 @@
 macOS 对跨进程内存读取限制很严（SIP / task_for_pid / hardened runtime），
 因此 macOS 版采用与原始 Windows 工具相同的 CDP 方案：
 
-    退出爱问云 → 带 --remote-debugging-address=127.0.0.1
+    退出爱问云 → 用 open -a 带 --remote-debugging-address=127.0.0.1
     --remote-debugging-port=9222 重新打开 → Runtime.evaluate 读取
     window.Plaso.userInfo.access_token → 关闭 CDP 连接
+    → 再正常打开一次，避免客户端停留在白屏窗口
 
 不会把调试端口暴露到局域网；重启前必须得到用户确认。
 """
@@ -179,12 +180,26 @@ def launch_app(app: Path, port: int = DEBUG_PORT) -> None:
     executable = _bundle_executable(app)
     if executable is None:
         raise MacTokenError('没有找到爱问云可执行文件：%s' % app)
-    subprocess.Popen(
-        [str(executable),
+    # 等 Electron 的 helper 进程完全退出，避免新实例拿到旧的单例锁/缓存后白屏。
+    time.sleep(0.8)
+    # 必须通过 LaunchServices 的 open -a 启动；直接执行 Contents/MacOS 下的
+    # 二进制会让部分 Electron 客户端窗口白屏。
+    result = subprocess.run(
+        ['open', '-a', str(app), '--args',
          '--remote-debugging-address=127.0.0.1',
          '--remote-debugging-port=%d' % port],
-        cwd=str(executable.parent), stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL, start_new_session=True)
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or '').strip()
+        raise MacTokenError('启动爱问云失败：%s' % (detail or 'open 返回 %d' % result.returncode))
+
+
+def restore_app(app: Path) -> None:
+    """关闭调试实例，按正常方式重新打开，避免用户看到白屏窗口。"""
+    quit_app(app)
+    subprocess.run(
+        ['open', '-a', str(app)],
+        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class CDPError(RuntimeError):
@@ -423,11 +438,19 @@ def acquire_tokens(scan_timeout: float = 8.0, allow_restart: bool = False,
             raise MacTokenError('已取消')
         launch_app(app)
         restarted = True
-        if not _wait_for_port(DEBUG_PORT, 60, cancel_event):
-            raise MacTokenError('重启后没能连上调试端口，请手动打开爱问云后重试')
-        if on_event:
-            on_event('log', '客户端已启动，等待登录态…')
-        context = _wait_for_context(DEBUG_PORT, 150, cancel_event)
+        try:
+            if not _wait_for_port(DEBUG_PORT, 60, cancel_event):
+                raise MacTokenError('重启后没能连上调试端口，请手动打开爱问云后重试')
+            if on_event:
+                on_event('log', '客户端已启动，等待登录态…')
+            context = _wait_for_context(DEBUG_PORT, 150, cancel_event)
+        except Exception:
+            # 启动/读取失败时不要把用户留在白屏的调试实例里。
+            try:
+                restore_app(app)
+            except Exception:
+                pass
+            raise
 
     token = context['token']
     metadata = parse_token_metadata(token)

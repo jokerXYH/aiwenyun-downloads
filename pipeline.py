@@ -559,6 +559,23 @@ def _fallback_record(row: dict[str, Any], note: str) -> dict[str, Any]:
     }
 
 
+def _restore_macos_client(scan_info: dict[str, Any],
+                          on_event: Callable[[str, Any], None] | None) -> None:
+    """导出结束后把 macOS 客户端从调试实例恢复成正常窗口。"""
+
+    if sys.platform != 'darwin':
+        return
+    if not scan_info.get('restarted') or not scan_info.get('app'):
+        return
+    try:
+        from token_macos import restore_app
+
+        restore_app(Path(scan_info['app']))
+        _emit(on_event, 'log', '已恢复正常客户端窗口')
+    except Exception as error:  # noqa: BLE001
+        _emit(on_event, 'log', '恢复客户端窗口失败：%s' % error)
+
+
 def run_export(options: ExportOptions | None = None,
                on_event: Callable[[str, Any], None] | None = None,
                cancel_event: threading.Event | None = None) -> ExportSummary:
@@ -675,11 +692,16 @@ def run_export(options: ExportOptions | None = None,
     except AuthError as error:
         if state is not None:
             state.close()
+        _restore_macos_client(scan_info, on_event)
         raise PipelineError(redact(error)) from error
     except TokenScanError as error:
         if state is not None:
             state.close()
+        _restore_macos_client(scan_info, on_event)
         raise PipelineError(redact(error)) from error
+    except Exception:
+        _restore_macos_client(scan_info, on_event)
+        raise
 
     try:
         check_cancel()
@@ -807,6 +829,7 @@ def run_export(options: ExportOptions | None = None,
     finally:
         if state is not None:
             state.close()
+        _restore_macos_client(scan_info, on_event)
 
 
 def _write_csv(path: Path, results: list[dict[str, Any]]) -> Path:

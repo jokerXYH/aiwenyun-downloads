@@ -1,65 +1,31 @@
-爱问云邀请码导出 2.1.1 · 运行与验证日志
+爱问云邀请码导出 2.1.2 · 运行与验证日志
 ========================================
 
 验证时间：2026-10-28
 验证环境：Windows 11 x64 / Python 3.12 / certifi
 
-一、App 自检
-命令：python run_gui.py --smoke-test
-输出：
-  smoke ok: Tk 8.6, CA 136
+一、本地验证
+- 单元测试：25 个通过
+- App 自检：smoke ok: Tk 8.6, CA 136
+- 真实 TLS：CA certs: 136 / TLS ok: www.aiwenyun.cn TLSv1.2
+- 业务接口：gt/servlet/timeTable/getTimeTable 返回 code 0
 
-二、真实 TLS 连接
-命令：python run_gui.py --ssl-test
-输出：
-  CA certs: 136
-  TLS ok: www.aiwenyun.cn TLSv1.2
+二、2.1.2 白屏修复
+- macOS 启动从“直接执行 Contents/MacOS 二进制”改为 `open -a ... --args`。
+- 读完登录态、导出结束后自动 `restore_app`：关闭调试实例，再正常打开客户端。
+- 新增 3 个 macOS 启动/恢复单测，验证命令参数与恢复流程。
 
-三、业务接口验证
-请求：gt/servlet/timeTable/getTimeTable
-结果：code 0，返回 list / total
+三、macOS 构建验证（GitHub Actions）
+- 工作流：待本次 v2.1.2 构建完成后补充。
+- 构建时会执行：
+    "$BIN" --smoke-test
+    "$BIN" --ssl-test
 
-四、单元测试
-命令：python -m unittest discover -s tests -q
-结果：
-  Ran 22 tests in 1.601s
-  OK
-
-五、macOS 构建验证（GitHub Actions）
-工作流：https://github.com/jokerXYH/aiwenyun-downloads/actions/runs/40646872097
-
-- macOS arm64：成功（48s）
-    smoke ok: Tk 8.6, CA 118
-    CA certs: 118
-    TLS ok: www.aiwenyun.cn TLSv1.2
-- macOS x64：成功（2m33s）
-    smoke ok: Tk 8.6, CA 118
-    CA certs: 118
-    TLS ok: www.aiwenyun.cn TLSv1.2
-- Windows x64：成功（1m1s）
-
-以上输出来自打包后的 .app 自身：
-  "$BIN" --smoke-test
-  "$BIN" --ssl-test
-说明 macOS 包里确实带上了 certifi 证书，并且能完成真实 TLS 握手。
-
-六、结论
-1. 2.1.1 已把 certifi 的 cacert.pem 打进 macOS App。
-2. App 启动后会加载 100+ 个 CA 根证书，并能正常连接 www.aiwenyun.cn。
-3. 之前 macOS 上的 CERTIFICATE_VERIFY_FAILED / unable to get local issuer
-   certificate 已修复。
-4. 如果 2.1.1 仍报证书错误，请运行“诊断.command”，把“诊断日志.txt”发回。
+四、结论
+1. 2.1.2 保留 2.1.1 的 certifi 证书修复。
+2. macOS 客户端不再停留在调试实例的白屏窗口。
+3. 如果仍遇到白屏，请等导出结束；程序会自动恢复正常窗口。
+   若一直白屏，手动退出爱问云（Cmd+Q）再打开。
 
 备注：macOS 包未做 Apple 开发者签名/公证，首次打开仍需在
 “系统设置 → 隐私与安全性 → 仍要打开”放行一次；这与 SSL 证书无关。
-
-七、分发包解压验证（macOS runner）
-工作流：https://github.com/jokerXYH/aiwenyun-downloads/actions/runs/40649865264
-- 用 ditto -x -k 解压 release zip，得到“爱问云邀请码导出.app”。
-- codesign --verify --deep --strict 通过。
-- 诊断.command 权限为 -rwxr-xr-x，可直接双击运行。
-- 解压后的 App 自检：
-    smoke ok: Tk 8.6, CA 118
-    CA certs: 118
-    TLS ok: www.aiwenyun.cn TLSv1.2
-- 使用说明.txt / 运行日志.txt / 诊断.command 均随包提供。
