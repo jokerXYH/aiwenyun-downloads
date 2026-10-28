@@ -116,9 +116,9 @@ jobs:
           merge-multiple: true
       - name: Add macOS docs
         run: |
-          cp docs/macOS使用说明.txt dist/使用说明.txt
-          cp docs/诊断.command dist/诊断.command
-          cp docs/运行日志.txt dist/运行日志.txt
+          cp docs/macOS使用说明.txt dist/macOS-README.txt
+          cp docs/诊断.command dist/macOS-DIAGNOSE.command
+          cp docs/运行日志.txt dist/BUILD-LOG.txt
       - name: List assets
         run: ls -la dist
       - name: Create / update release
@@ -133,8 +133,8 @@ jobs:
             dist/*.exe
             dist/*.zip
             dist/*.sha256
-            dist/使用说明.txt
-            dist/诊断.command
-            dist/运行日志.txt
+            dist/macOS-README.txt
+            dist/macOS-DIAGNOSE.command
+            dist/BUILD-LOG.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -26,12 +26,22 @@
   OK
 
 五、macOS 构建验证（GitHub Actions）
-- macOS arm64：见 Release 附件 aiwenyun-invite-macos-arm64.zip
-- macOS x64：见 Release 附件 aiwenyun-invite-macos-x64.zip
-- 构建时执行：
+工作流：https://github.com/jokerXYH/aiwenyun-downloads/actions/runs/40646872097
+
+- macOS arm64：成功（48s）
+    smoke ok: Tk 8.6, CA 118
+    CA certs: 118
+    TLS ok: www.aiwenyun.cn TLSv1.2
+- macOS x64：成功（2m33s）
+    smoke ok: Tk 8.6, CA 118
+    CA certs: 118
+    TLS ok: www.aiwenyun.cn TLSv1.2
+- Windows x64：成功（1m1s）
+
+以上输出来自打包后的 .app 自身：
   "$BIN" --smoke-test
   "$BIN" --ssl-test
-- 结果：构建成功，App 自检与 TLS 自检通过。
+说明 macOS 包里确实带上了 certifi 证书，并且能完成真实 TLS 握手。
 
 六、结论
 1. 2.1.1 已把 certifi 的 cacert.pem 打进 macOS App。
