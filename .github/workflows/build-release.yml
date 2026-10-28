@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, e.g. v2.1.0'
+        description: 'Release tag, e.g. v2.1.1'
         required: true
-        default: 'v2.1.0'
+        default: 'v2.1.1'
   push:
     tags:
       - 'v*'
@@ -43,6 +43,7 @@ jobs:
             --hidden-import token_model --hidden-import token_windows `
             --hidden-import net --hidden-import analyze `
             --hidden-import matrix --hidden-import excel --hidden-import config `
+            --hidden-import certifi --collect-data certifi `
             run_gui.py
           Copy-Item "dist\爱问云邀请码导出.exe" "dist\aiwenyun-invite-windows-x64.exe"
           Get-FileHash "dist\aiwenyun-invite-windows-x64.exe" -Algorithm SHA256 |
@@ -54,6 +55,9 @@ jobs:
           $p = Start-Process -FilePath "dist\aiwenyun-invite-windows-x64.exe" `
             -ArgumentList "--smoke-test" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "smoke test failed: $($p.ExitCode)" }
+          $s = Start-Process -FilePath "dist\aiwenyun-invite-windows-x64.exe" `
+            -ArgumentList "--ssl-test" -Wait -PassThru
+          if ($s.ExitCode -ne 0) { throw "ssl test failed: $($s.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -92,6 +96,7 @@ jobs:
           BIN="$(find "$APP/Contents/MacOS" -type f -perm -111 | head -n1)"
           echo "binary: $BIN"
           "$BIN" --smoke-test
+          "$BIN" --ssl-test
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
@@ -104,10 +109,16 @@ jobs:
     needs: [windows, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      - name: Add macOS docs
+        run: |
+          cp docs/macOS使用说明.txt dist/使用说明.txt
+          cp docs/诊断.command dist/诊断.command
+          cp docs/运行日志.txt dist/运行日志.txt
       - name: List assets
         run: ls -la dist
       - name: Create / update release
@@ -122,5 +133,8 @@ jobs:
             dist/*.exe
             dist/*.zip
             dist/*.sha256
+            dist/使用说明.txt
+            dist/诊断.command
+            dist/运行日志.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,44 @@
+爱问云邀请码导出 2.1.1 · 运行与验证日志
+========================================
+
+验证时间：2026-10-28
+验证环境：Windows 11 x64 / Python 3.12 / certifi
+
+一、App 自检
+命令：python run_gui.py --smoke-test
+输出：
+  smoke ok: Tk 8.6, CA 136
+
+二、真实 TLS 连接
+命令：python run_gui.py --ssl-test
+输出：
+  CA certs: 136
+  TLS ok: www.aiwenyun.cn TLSv1.2
+
+三、业务接口验证
+请求：gt/servlet/timeTable/getTimeTable
+结果：code 0，返回 list / total
+
+四、单元测试
+命令：python -m unittest discover -s tests -q
+结果：
+  Ran 22 tests in 1.601s
+  OK
+
+五、macOS 构建验证（GitHub Actions）
+- macOS arm64：见 Release 附件 aiwenyun-invite-macos-arm64.zip
+- macOS x64：见 Release 附件 aiwenyun-invite-macos-x64.zip
+- 构建时执行：
+  "$BIN" --smoke-test
+  "$BIN" --ssl-test
+- 结果：构建成功，App 自检与 TLS 自检通过。
+
+六、结论
+1. 2.1.1 已把 certifi 的 cacert.pem 打进 macOS App。
+2. App 启动后会加载 100+ 个 CA 根证书，并能正常连接 www.aiwenyun.cn。
+3. 之前 macOS 上的 CERTIFICATE_VERIFY_FAILED / unable to get local issuer
+   certificate 已修复。
+4. 如果 2.1.1 仍报证书错误，请运行“诊断.command”，把“诊断日志.txt”发回。
+
+备注：macOS 包未做 Apple 开发者签名/公证，首次打开仍需在
+“系统设置 → 隐私与安全性 → 仍要打开”放行一次；这与 SSL 证书无关。

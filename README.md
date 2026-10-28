@@ -1,4 +1,4 @@
-# 爱问云邀请码导出 2.1.0
+# 爱问云邀请码导出 2.1.1
 
 Windows / macOS 下载与源码。用于读取本机已登录的爱问云客户端，导出「实时课堂」的邀请码 Excel。
 
@@ -16,6 +16,12 @@ Windows / macOS 下载与源码。用于读取本机已登录的爱问云客户�
 
 每个 Release 同时提供 `.sha256` 校验文件。
 
+## 2.1.1 修复
+
+- macOS 版内置 `certifi` CA 根证书，修复 `CERTIFICATE_VERIFY_FAILED / unable to get local issuer certificate`。
+- 打包脚本自动收集 `certifi` 证书文件，macOS / Windows 构建行为一致。
+- 更新 macOS 15+ Gatekeeper 首次打开说明。
+
 ## Windows
 
 - 免重启、不开 9222 调试端口。
@@ -29,8 +35,19 @@ Windows / macOS 下载与源码。用于读取本机已登录的爱问云客户�
 - 受 SIP / hardened runtime 限制，macOS 版需要关闭并重新打开爱问云，
   仅在本机 `127.0.0.1:9222` 开启调试端口，通过 CDP 读取登录态。
 - GUI 会弹窗确认重启；CLI 需要 `--allow-restart`。
-- 未签名 / 未公证的包首次打开需右键 → 打开，或执行：
-  `xattr -dr com.apple.quarantine "爱问云邀请码导出.app"`。
+- 未签名 / 未公证的包首次打开会被 Gatekeeper 拦截。macOS 15+ 已不支持
+  右键 → 打开：先双击一次，然后到「系统设置 → 隐私与安全性 → 安全性」
+  点「仍要打开」；或在终端执行：
+  `xattr -dr com.apple.quarantine "/Applications/爱问云邀请码导出.app"`。
+- 如果提示 `CERTIFICATE_VERIFY_FAILED ... unable to get local issuer certificate`，
+  这是 macOS 打包版找不到 CA 根证书导致的。当前源码已改为优先使用
+  `certifi`，重新构建即可。旧包可临时从终端启动：
+
+  ```bash
+  curl -L https://curl.se/ca/cacert.pem -o ~/Downloads/cacert.pem
+  SSL_CERT_FILE=~/Downloads/cacert.pem \
+    "/Applications/爱问云邀请码导出.app/Contents/MacOS/爱问云邀请码导出"
+  ```
 - 只在 macOS 12+ 上构建；未在真实 Mac 上人工测试，首次使用请保留日志。
 
 ## 稳定性设计（2.1.0）

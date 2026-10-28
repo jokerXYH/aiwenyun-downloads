@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import random
 import re
 import socket
@@ -39,6 +40,37 @@ def redact(text: Any, limit: int = 300) -> str:
         value = pattern.sub(replacement, value)
     value = value.replace('\r', ' ').replace('\n', ' ')
     return value[:limit]
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """创建带可用 CA 根证书的 TLS 上下文。
+
+    Windows 可以直接读取系统证书库；macOS 上 PyInstaller 打包的
+    Python/OpenSSL 不一定能找到系统根证书，因此优先使用 certifi
+    自带的 cacert.pem，其次回退到 SSL_CERT_FILE 和常见系统路径。
+    """
+
+    cafile = None
+    try:
+        import certifi  # type: ignore
+
+        cafile = certifi.where()
+        if cafile and not os.path.isfile(cafile):
+            cafile = None
+    except Exception:
+        cafile = None
+
+    if not cafile:
+        for candidate in (
+            os.environ.get('SSL_CERT_FILE'),
+            '/etc/ssl/cert.pem',
+            '/etc/pki/tls/certs/ca-bundle.crt',
+        ):
+            if candidate and os.path.isfile(candidate):
+                cafile = candidate
+                break
+
+    return ssl.create_default_context(cafile=cafile)
 
 
 class ApiError(RuntimeError):
@@ -129,7 +161,7 @@ class HttpTransport:
         self.port = parsed.port or 443
         self.prefix = parsed.path.rstrip('/')
         self.timeout = timeout
-        self._context = ssl.create_default_context()
+        self._context = _ssl_context()
         self._local = threading.local()
 
     def _connection(self) -> http.client.HTTPSConnection:

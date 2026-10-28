@@ -10,7 +10,7 @@ from tkinter import (BOTH, LEFT, RIGHT, X, Y, BooleanVar, IntVar, StringVar,
                      Tk, messagebox, ttk)
 from tkinter import Text, font as tkfont
 
-from config import APP_NAME, APP_VERSION, open_path
+from config import APP_NAME, APP_VERSION, DEFAULT_BASE_URL, open_path
 from pipeline import (Cancelled, ExportOptions, ExportSummary, NoClassesError,
                       PipelineError, run_export)
 from token_source import debug_port_open
@@ -340,19 +340,37 @@ class App:
 
 
 def main() -> int:
+    if '--ssl-test' in sys.argv:
+        # CI/诊断用：用打包后的证书上下文真实连一次业务主机。
+        import socket
+        from urllib.parse import urlparse
+
+        from net import _ssl_context
+
+        host = urlparse(DEFAULT_BASE_URL).hostname or 'www.aiwenyun.cn'
+        context = _ssl_context()
+        print('CA certs: %d' % len(context.get_ca_certs()))
+        with socket.create_connection((host, 443), timeout=10) as sock:
+            with context.wrap_socket(sock, server_hostname=host) as tls:
+                print('TLS ok: %s %s' % (host, tls.version()))
+        return 0
+
     if '--smoke-test' in sys.argv:
         # CI 用：验证打包后的 .app / exe 能加载 Tkinter、openpyxl 和业务模块。
         import tkinter
         from openpyxl import Workbook  # noqa: F401
         import analyze  # noqa: F401
         import matrix  # noqa: F401
-        import net  # noqa: F401
+        from net import _ssl_context
         import pipeline  # noqa: F401
         if sys.platform == 'darwin':
             import token_macos  # noqa: F401
         else:
             import token_windows  # noqa: F401
-        print('smoke ok: Tk %s' % tkinter.TkVersion)
+        ca_count = len(_ssl_context().get_ca_certs())
+        if ca_count < 10:
+            raise SystemExit('CA bundle missing: %d' % ca_count)
+        print('smoke ok: Tk %s, CA %d' % (tkinter.TkVersion, ca_count))
         return 0
     app = App()
     if '--auto' in sys.argv:

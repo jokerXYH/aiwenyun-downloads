@@ -23,6 +23,8 @@ pyinstaller --noconfirm --clean --onefile --windowed ^
   --hidden-import matrix ^
   --hidden-import excel ^
   --hidden-import config ^
+  --hidden-import certifi ^
+  --collect-data certifi ^
   run_gui.py
 
 echo.
