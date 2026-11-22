@@ -1,10 +1,10 @@
 #!/bin/bash
-# 在 macOS 上构建「爱问云邀请码导出.app」。
+# 在 macOS 上构建「爱问云集成工具.app」。
 # 用法：双击本文件，或在终端执行 ./build_macos.command
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="爱问云邀请码导出"
+APP_NAME="爱问云集成工具"
 PYTHON="${PYTHON:-python3}"
 
 if ! command -v "$PYTHON" >/dev/null 2>&1; then
@@ -32,7 +32,6 @@ python -m PyInstaller --noconfirm --clean --windowed \
   --add-data "app.icns:." \
   --paths . \
   --exclude-module numpy \
-  --exclude-module PIL \
   --exclude-module lxml \
   --exclude-module pandas \
   --exclude-module scipy \
@@ -47,6 +46,11 @@ python -m PyInstaller --noconfirm --clean --windowed \
   --hidden-import matrix \
   --hidden-import excel \
   --hidden-import config \
+  --hidden-import login \
+  --hidden-import banshu_export \
+  --hidden-import homework_export \
+  --hidden-import PIL \
+  --hidden-import PIL.ImageDraw \
   --hidden-import certifi \
   --collect-data certifi \
   --osx-bundle-identifier top.jokerx.aiwenyun \

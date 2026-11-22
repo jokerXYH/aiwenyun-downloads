@@ -37,6 +37,7 @@ from net import (ApiError, ApiSession, AuthError, NetworkError, RateLimitError,
                  TokenBucket, TokenExpired, authenticate, redact)
 from token_source import (TokenBatch, TokenScanError, acquire_tokens,
                           client_running, parse_token_metadata, platform_name)
+from token_model import TokenCandidate
 
 DAY_MS = 86400000
 
@@ -75,6 +76,10 @@ class ExportOptions:
     stall_timeout: float = DEFAULT_STALL_TIMEOUT
     retry_budget: float = DEFAULT_RETRY_BUDGET
     diagnostics: bool = True
+    # 界面账号登录得到的会话（优先使用；为空则沿用客户端内存扫描）
+    preferred_token: str = ''
+    # token 过期时重新登录取新 token 的回调（可选）
+    renew_token: Callable[[], str] | None = None
 
 
 @dataclass
@@ -592,32 +597,42 @@ def run_export(options: ExportOptions | None = None,
             raise Cancelled('用户已取消')
 
     check_cancel()
-    if platform_name() == 'darwin':
-        if not client_running() and not options.allow_restart:
-            raise NoClientError(
-                'macOS 版需要重启爱问云并开启本机调试端口；请确认重启后重试。')
-        _emit(on_event, 'phase', '正在读取登录态（macOS：重启客户端 + 本机调试端口）…')
+    preferred_token = (options.preferred_token or '').strip()
+    if preferred_token:
+        # 界面账号登录得到的会话优先（免客户端内存扫描，不受旧会话被轮换影响）
+        _emit(on_event, 'phase', '使用界面登录的账号会话…')
+        batch = TokenBatch(
+            candidates=[TokenCandidate(value=preferred_token, source='gui')],
+            info={'method': 'gui'})
     else:
-        if not client_running():
-            raise NoClientError('没有找到运行中的爱问云客户端（ai-yxt.exe）。')
-        _emit(on_event, 'phase', '正在读取登录态（免重启，只读内存）…')
+        if platform_name() == 'darwin':
+            if not client_running() and not options.allow_restart:
+                raise NoClientError(
+                    'macOS 版需要重启爱问云并开启本机调试端口；请确认重启后重试。')
+            _emit(on_event, 'phase', '正在读取登录态（macOS：重启客户端 + 本机调试端口）…')
+        else:
+            if not client_running():
+                raise NoClientError('没有找到运行中的爱问云客户端（ai-yxt.exe）。')
+            _emit(on_event, 'phase', '正在读取登录态（免重启，只读内存）…')
 
-    try:
-        scan_started = time.monotonic()
-        batch = acquire_tokens(
-            scan_timeout=options.scan_timeout,
-            allow_restart=options.allow_restart,
-            on_event=on_event,
-            cancel_event=cancel_event,
-        )
-        mark('scan', scan_started)
-    except TokenScanError as error:
-        raise PipelineError(redact(error)) from error
+        try:
+            scan_started = time.monotonic()
+            batch = acquire_tokens(
+                scan_timeout=options.scan_timeout,
+                allow_restart=options.allow_restart,
+                on_event=on_event,
+                cancel_event=cancel_event,
+            )
+            mark('scan', scan_started)
+        except TokenScanError as error:
+            raise PipelineError(redact(error)) from error
 
     info = batch.info or {}
     scan_info = dict(info)
     scan_info['candidates'] = len(batch.candidates)
-    if info.get('method') == 'memory':
+    if info.get('method') == 'gui':
+        _emit(on_event, 'log', '使用界面登录的账号会话（无需客户端内存扫描）')
+    elif info.get('method') == 'memory':
         suffix = '（快速扫描）' if info.get('partial') else ''
         _emit(on_event, 'log',
               '扫描 %s 个客户端进程 / %s MB 内存，找到 %d 个候选登录态，用时 %ss%s' % (
@@ -649,8 +664,28 @@ def run_export(options: ExportOptions | None = None,
     state = None
 
     def build_state(current_batch):
+        provider = acquire_tokens
+        if options.preferred_token and options.renew_token is not None:
+            renew = options.renew_token
+
+            def provider_with_renew(**kwargs):
+                """token 过期时先用界面账号重登，失败再回退客户端扫描。"""
+
+                try:
+                    token = renew()
+                    if token:
+                        return TokenBatch(
+                            candidates=[TokenCandidate(value=token,
+                                                       source='gui')],
+                            info={'method': 'gui'})
+                except Exception as error:  # noqa: BLE001
+                    _emit(on_event, 'log', '重新登录失败，回退到客户端扫描：%s'
+                          % redact(error))
+                return acquire_tokens(**kwargs)
+
+            provider = provider_with_renew
         return TokenState(
-            acquire_tokens, base_urls, current_batch,
+            provider, base_urls, current_batch,
             timeout=options.timeout,
             scan_timeout=options.scan_timeout,
             allow_restart=options.allow_restart,
@@ -662,26 +697,56 @@ def run_export(options: ExportOptions | None = None,
         auth_started = time.monotonic()
         try:
             state = build_state(batch)
-        except AuthError:
+        except AuthError as _first_error:
             info_now = batch.info or {}
-            if info_now.get('method') != 'memory' or info_now.get('full'):
+            if info_now.get('method') == 'gui':
+                # 界面登录态不可用：回退到客户端内存扫描（原流程）
+                _emit(on_event, 'log', '界面登录态不可用，回退到客户端内存扫描…')
+                if platform_name() == 'darwin':
+                    if not client_running() and not options.allow_restart:
+                        raise NoClientError(
+                            'macOS 版需要重启爱问云并开启本机调试端口；'
+                            '请确认重启后重试。')
+                elif not client_running():
+                    raise NoClientError(
+                        '界面登录态不可用，且没有找到运行中的爱问云客户端'
+                        '（ai-yxt.exe）。')
+                try:
+                    batch = acquire_tokens(
+                        scan_timeout=options.scan_timeout,
+                        allow_restart=options.allow_restart,
+                        on_event=on_event,
+                        cancel_event=cancel_event,
+                        full=True,
+                    )
+                except TokenScanError as scan_error:
+                    raise AuthError(
+                        '界面登录态与客户端登录态均不可用：%s'
+                        % redact(scan_error)) from scan_error
+                scan_info.update(batch.info or {})
+                scan_info['candidates'] = len(batch.candidates)
+                state = build_state(batch)
+            elif info_now.get('method') != 'memory' or info_now.get('full'):
                 raise
-            # 快速扫描只看了第一个有 token 的进程，候选失效时再做完整扫描
-            _emit(on_event, 'log', '快速扫描到的登录态不可用，重新完整扫描…')
-            batch = acquire_tokens(
-                scan_timeout=options.scan_timeout,
-                allow_restart=options.allow_restart,
-                on_event=on_event,
-                cancel_event=cancel_event,
-                full=True,
-            )
-            scan_info.update(batch.info or {})
-            scan_info['candidates'] = len(batch.candidates)
-            _emit(on_event, 'log',
-                  '完整扫描：%s 个进程 / %s MB，%s 个候选，用时 %ss' % (
-                      scan_info.get('processes', '?'), scan_info.get('mb', '?'),
-                      scan_info.get('candidates', '?'), scan_info.get('elapsed', '?')))
-            state = build_state(batch)
+            else:
+                # 快速扫描只看了第一个有 token 的进程，候选失效时再做完整扫描
+                _emit(on_event, 'log', '快速扫描到的登录态不可用，重新完整扫描…')
+                batch = acquire_tokens(
+                    scan_timeout=options.scan_timeout,
+                    allow_restart=options.allow_restart,
+                    on_event=on_event,
+                    cancel_event=cancel_event,
+                    full=True,
+                )
+                scan_info.update(batch.info or {})
+                scan_info['candidates'] = len(batch.candidates)
+                _emit(on_event, 'log',
+                      '完整扫描：%s 个进程 / %s MB，%s 个候选，用时 %ss' % (
+                          scan_info.get('processes', '?'),
+                          scan_info.get('mb', '?'),
+                          scan_info.get('candidates', '?'),
+                          scan_info.get('elapsed', '?')))
+                state = build_state(batch)
         mark('auth', auth_started)
         meta = state.metadata
         _emit(on_event, 'log', '登录态有效：%s（用户 %s，版本 %s，签发时间 %s）' % (
@@ -693,7 +758,11 @@ def run_export(options: ExportOptions | None = None,
         if state is not None:
             state.close()
         _restore_macos_client(scan_info, on_event)
-        raise PipelineError(redact(error)) from error
+        message = redact(error)
+        if 'access token' in message.lower():
+            message += ('。客户端登录态已失效：请重启爱问云客户端，'
+                        '或先用账号密码登录后再导出。')
+        raise PipelineError(message) from error
     except TokenScanError as error:
         if state is not None:
             state.close()

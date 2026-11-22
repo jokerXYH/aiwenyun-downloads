@@ -33,19 +33,22 @@ jobs:
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
-            --name "爱问云邀请码导出" `
+            --name "爱问云集成工具" `
             --icon app.ico `
             --add-data "app.ico;." `
             --paths . `
-            --exclude-module numpy --exclude-module PIL --exclude-module lxml `
+            --exclude-module numpy --exclude-module lxml `
             --exclude-module pandas --exclude-module scipy --exclude-module matplotlib `
             --hidden-import gui --hidden-import pipeline --hidden-import token_source `
             --hidden-import token_model --hidden-import token_windows `
             --hidden-import net --hidden-import analyze `
             --hidden-import matrix --hidden-import excel --hidden-import config `
+            --hidden-import login --hidden-import banshu_export `
+            --hidden-import homework_export --hidden-import PIL `
+            --hidden-import PIL.ImageDraw `
             --hidden-import certifi --collect-data certifi `
             run_gui.py
-          Copy-Item "dist\爱问云邀请码导出.exe" "dist\aiwenyun-invite-windows-x64.exe"
+          Copy-Item "dist\爱问云集成工具.exe" "dist\aiwenyun-invite-windows-x64.exe"
           Get-FileHash "dist\aiwenyun-invite-windows-x64.exe" -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  aiwenyun-invite-windows-x64.exe" } |
             Set-Content "dist\aiwenyun-invite-windows-x64.sha256" -Encoding ascii
@@ -92,7 +95,7 @@ jobs:
           ./build_macos.command
       - name: Smoke test .app
         run: |
-          APP="dist/爱问云邀请码导出.app"
+          APP="dist/爱问云集成工具.app"
           BIN="$(find "$APP/Contents/MacOS" -type f -perm -111 | head -n1)"
           echo "binary: $BIN"
           "$BIN" --smoke-test
@@ -125,7 +128,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          name: 爱问云邀请码导出 ${{ github.event.inputs.version || github.ref_name }}
+          name: 爱问云集成工具 ${{ github.event.inputs.version || github.ref_name }}
           draft: false
           prerelease: false
           generate_release_notes: true

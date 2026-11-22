@@ -1,5 +1,5 @@
 #!/bin/bash
-# 爱问云邀请码导出 · macOS 诊断脚本
+# 爱问云集成工具 · macOS 诊断脚本
 # 用法：在终端执行  bash ~/Downloads/诊断.command
 # 或者右键 → 打开方式 → 终端
 
@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 LOG="诊断日志.txt"
 
 {
-  echo "爱问云邀请码导出 诊断日志"
+  echo "爱问云集成工具 诊断日志"
   echo "生成时间: $(date '+%Y-%m-%d %H:%M:%S')"
   echo "macOS: $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
   echo "架构: $(uname -m)"
@@ -17,10 +17,10 @@ LOG="诊断日志.txt"
   echo "=== 1. 查找 App ==="
   APP=""
   for p in \
-    "/Applications/爱问云邀请码导出.app" \
-    "$HOME/Applications/爱问云邀请码导出.app" \
-    "$HOME/Downloads/爱问云邀请码导出.app" \
-    "$(dirname "$0")/爱问云邀请码导出.app"
+    "/Applications/爱问云集成工具.app" \
+    "$HOME/Applications/爱问云集成工具.app" \
+    "$HOME/Downloads/爱问云集成工具.app" \
+    "$(dirname "$0")/爱问云集成工具.app"
   do
     if [ -d "$p" ]; then APP="$p"; break; fi
   done

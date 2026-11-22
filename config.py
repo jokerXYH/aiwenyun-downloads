@@ -16,8 +16,8 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
-APP_NAME = '爱问云邀请码导出'
-APP_VERSION = '2.1.2'
+APP_NAME = '爱问云集成工具'
+APP_VERSION = '2.2.0'
 DEFAULT_BASE_URL = 'https://www.aiwenyun.cn/'
 CLIENT_EXE = 'ai-yxt.exe'
 CREATE_NO_WINDOW = 0x08000000

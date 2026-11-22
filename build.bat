@@ -1,14 +1,14 @@
 @echo off
+chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
 pyinstaller --noconfirm --clean --onefile --windowed ^
-  --name "爱问云邀请码导出" ^
+  --name "爱问云集成工具" ^
   --icon app.ico ^
   --add-data "app.ico;." ^
   --paths . ^
   --exclude-module numpy ^
-  --exclude-module PIL ^
   --exclude-module lxml ^
   --exclude-module pandas ^
   --exclude-module scipy ^
@@ -23,10 +23,15 @@ pyinstaller --noconfirm --clean --onefile --windowed ^
   --hidden-import matrix ^
   --hidden-import excel ^
   --hidden-import config ^
+  --hidden-import login ^
+  --hidden-import banshu_export ^
+  --hidden-import homework_export ^
+  --hidden-import PIL ^
+  --hidden-import PIL.ImageDraw ^
   --hidden-import certifi ^
   --collect-data certifi ^
   run_gui.py
 
 echo.
-echo 输出：dist\爱问云邀请码导出.exe
+echo 输出：dist\爱问云集成工具.exe
 pause

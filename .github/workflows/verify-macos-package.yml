@@ -30,7 +30,7 @@ jobs:
         run: |
           mkdir -p out
           ditto -x -k "${{ matrix.asset }}" out
-          APP="out/爱问云邀请码导出.app"
+          APP="out/爱问云集成工具.app"
           test -d "$APP"
           echo "--- version ---"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist"
@@ -41,9 +41,9 @@ jobs:
           echo "--- spctl (expected reject: not notarized) ---"
           spctl -a -vv "$APP" || true
           echo "--- smoke ---"
-          "$APP/Contents/MacOS/爱问云邀请码导出" --smoke-test
+          "$APP/Contents/MacOS/爱问云集成工具" --smoke-test
           echo "--- ssl ---"
-          "$APP/Contents/MacOS/爱问云邀请码导出" --ssl-test
+          "$APP/Contents/MacOS/爱问云集成工具" --ssl-test
           echo "--- docs ---"
           ls -l out/使用说明.txt out/运行日志.txt out/诊断.command
           head -n 3 out/使用说明.txt
