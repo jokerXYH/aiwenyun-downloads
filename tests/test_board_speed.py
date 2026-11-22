@@ -61,7 +61,11 @@ class PagePrepareTests(unittest.TestCase):
         self.assertEqual(downloader.calls,
                          ['https://cdn.example/board/a.png',
                           'https://cdn.example/board/b.png'])
-        self.assertEqual(sorted(seen), [(1, 2, 'a.png'), (2, 2, 'b.png')])
+        # 两个线程谁先完成不确定，只校验「每页各回调一次、总数对」
+        self.assertEqual(sorted((done, total) for done, total, _name in seen),
+                         [(1, 2), (2, 2)])
+        self.assertEqual(sorted(name for _d, _t, name in seen),
+                         ['a.png', 'b.png'])
         self.assertTrue(all(page.stream for page in result))
         # 压缩流应能解回原始尺寸的 RGB 字节
         self.assertEqual(len(zlib.decompress(result[0].stream)),
