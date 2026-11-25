@@ -30,6 +30,7 @@ python -m PyInstaller --noconfirm --clean --windowed \
   --name "$APP_NAME" \
   --icon app.icns \
   --add-data "app.icns:." \
+  --add-data "assets:assets" \
   --paths . \
   --exclude-module numpy \
   --exclude-module lxml \
@@ -48,7 +49,9 @@ python -m PyInstaller --noconfirm --clean --windowed \
   --hidden-import config \
   --hidden-import login \
   --hidden-import banshu_export \
+  --hidden-import feedback_export \
   --hidden-import homework_export \
+  --hidden-import theme_art \
   --hidden-import PIL \
   --hidden-import PIL.ImageDraw \
   --hidden-import certifi \
@@ -81,9 +84,9 @@ case "$ARCH" in
   *) ARCH_LABEL="$ARCH" ;;
 esac
 
-ZIP="dist/aiwenyun-invite-macos-${ARCH_LABEL}.zip"
+ZIP="dist/aiwenyun-tools-macos-${ARCH_LABEL}.zip"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
-/usr/bin/shasum -a 256 "$ZIP" | tee "dist/aiwenyun-invite-macos-${ARCH_LABEL}.sha256"
+/usr/bin/shasum -a 256 "$ZIP" | tee "dist/aiwenyun-tools-macos-${ARCH_LABEL}.sha256"
 
 echo
 echo "完成：$ZIP"

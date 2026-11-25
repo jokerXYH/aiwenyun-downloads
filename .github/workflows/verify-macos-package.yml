@@ -16,9 +16,9 @@ jobs:
       matrix:
         include:
           - os: macos-15
-            asset: aiwenyun-invite-macos-arm64.zip
+            asset: aiwenyun-tools-macos-arm64.zip
           - os: macos-15-intel
-            asset: aiwenyun-invite-macos-x64.zip
+            asset: aiwenyun-tools-macos-x64.zip
     runs-on: ${{ matrix.os }}
     steps:
       - name: Download release asset
@@ -44,6 +44,3 @@ jobs:
           "$APP/Contents/MacOS/爱问云集成工具" --smoke-test
           echo "--- ssl ---"
           "$APP/Contents/MacOS/爱问云集成工具" --ssl-test
-          echo "--- docs ---"
-          ls -l out/使用说明.txt out/运行日志.txt out/诊断.command
-          head -n 3 out/使用说明.txt

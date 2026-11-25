@@ -32,6 +32,7 @@ _REDACT_PATTERNS = (
     (TOKEN_RE, '***'),
     (re.compile(r'(?i)(access[_-]?token\s*[:=]\s*)[^\s,;"\']+'), r'\1***'),
 )
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 def redact(text: Any, limit: int = 300) -> str:
@@ -219,8 +220,11 @@ class HttpTransport:
                 connection.request('POST', request_path, body=body,
                                    headers=headers)
                 response = connection.getresponse()
-                raw = response.read()
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
                 status = response.status
+                if len(raw) > MAX_RESPONSE_BYTES:
+                    self._drop_connection()
+                    raise ApiError('响应内容过大：%s' % path)
                 response_headers = {
                     key.lower(): value for key, value in response.getheaders()
                 }

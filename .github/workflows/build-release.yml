@@ -44,29 +44,33 @@ jobs:
             --hidden-import net --hidden-import analyze `
             --hidden-import matrix --hidden-import excel --hidden-import config `
             --hidden-import login --hidden-import banshu_export `
-            --hidden-import homework_export --hidden-import PIL `
+            --hidden-import feedback_export `
+            --hidden-import homework_export `
+            --hidden-import PIL `
             --hidden-import PIL.ImageDraw `
+            --hidden-import PIL.ImageTk `
+            --hidden-import PIL._tkinter_finder `
             --hidden-import certifi --collect-data certifi `
             run_gui.py
-          Copy-Item "dist\爱问云集成工具.exe" "dist\aiwenyun-invite-windows-x64.exe"
-          Get-FileHash "dist\aiwenyun-invite-windows-x64.exe" -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLower())  aiwenyun-invite-windows-x64.exe" } |
-            Set-Content "dist\aiwenyun-invite-windows-x64.sha256" -Encoding ascii
+          Copy-Item "dist\爱问云集成工具.exe" "dist\aiwenyun-tools-windows-x64.exe"
+          Get-FileHash "dist\aiwenyun-tools-windows-x64.exe" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  aiwenyun-tools-windows-x64.exe" } |
+            Set-Content "dist\aiwenyun-tools-windows-x64.sha256" -Encoding ascii
       - name: Smoke test exe
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath "dist\aiwenyun-invite-windows-x64.exe" `
+          $p = Start-Process -FilePath "dist\aiwenyun-tools-windows-x64.exe" `
             -ArgumentList "--smoke-test" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "smoke test failed: $($p.ExitCode)" }
-          $s = Start-Process -FilePath "dist\aiwenyun-invite-windows-x64.exe" `
+          $s = Start-Process -FilePath "dist\aiwenyun-tools-windows-x64.exe" `
             -ArgumentList "--ssl-test" -Wait -PassThru
           if ($s.ExitCode -ne 0) { throw "ssl test failed: $($s.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
-            dist/aiwenyun-invite-windows-x64.exe
-            dist/aiwenyun-invite-windows-x64.sha256
+            dist/aiwenyun-tools-windows-x64.exe
+            dist/aiwenyun-tools-windows-x64.sha256
 
   macos:
     name: macOS ${{ matrix.arch }}
@@ -104,8 +108,8 @@ jobs:
         with:
           name: macos-${{ matrix.arch }}
           path: |
-            dist/aiwenyun-invite-macos-*.zip
-            dist/aiwenyun-invite-macos-*.sha256
+            dist/aiwenyun-tools-macos-*.zip
+            dist/aiwenyun-tools-macos-*.sha256
 
   release:
     name: Publish release
@@ -119,9 +123,7 @@ jobs:
           merge-multiple: true
       - name: Add macOS docs
         run: |
-          cp docs/macOS使用说明.txt dist/macOS-README.txt
           cp docs/诊断.command dist/macOS-DIAGNOSE.command
-          cp docs/运行日志.txt dist/BUILD-LOG.txt
       - name: List assets
         run: ls -la dist
       - name: Create / update release
@@ -136,8 +138,6 @@ jobs:
             dist/*.exe
             dist/*.zip
             dist/*.sha256
-            dist/macOS-README.txt
             dist/macOS-DIAGNOSE.command
-            dist/BUILD-LOG.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

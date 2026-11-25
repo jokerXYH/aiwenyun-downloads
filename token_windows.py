@@ -10,7 +10,8 @@ import time
 from dataclasses import dataclass
 
 from config import CLIENT_EXE, CREATE_NO_WINDOW, DEFAULT_SCAN_TIMEOUT
-from token_model import (TokenCandidate, TokenScanError, extract_from_bytes)
+from token_model import (ASCII_MARKER, UTF16_MARKER, TokenCandidate,
+                         TokenScanError, extract_from_bytes)
 
 
 @dataclass
@@ -19,6 +20,7 @@ class ScanStats:
     regions: int = 0
     bytes_read: int = 0
     candidates: int = 0
+    marker_hits: int = 0
     elapsed: float = 0.0
     denied_processes: int = 0
     partial: bool = False
@@ -151,6 +153,9 @@ def _scan_pid(pid: int, deadline: float, chunk_size: int = 2 * 1024 * 1024,
                     data = buffer.raw[:bytes_read.value]
                     if stats is not None:
                         stats.bytes_read += len(data)
+                        stats.marker_hits += (
+                            data.count(ASCII_MARKER)
+                            + data.count(UTF16_MARKER))
                     for candidate in extract_from_bytes(
                             data, pid, base + offset):
                         found.setdefault(candidate.value, candidate)
@@ -197,6 +202,10 @@ def scan_tokens(image: str = CLIENT_EXE,
         hint = ''
         if stats.denied_processes:
             hint = '（部分进程拒绝访问，请用同一用户运行，或关闭杀毒软件的内存防护）'
+        elif stats.marker_hits:
+            hint = ('（检测到 %d 个 token 标记，但没有匹配到当前格式；'
+                    '客户端可能已升级，请更新工具或反馈日志）'
+                    % stats.marker_hits)
         raise TokenScanError(
             '没有在爱问云进程里找到登录态。请确认客户端已登录；'
             '如果刚登录，请等页面加载完成后再试。' + hint)

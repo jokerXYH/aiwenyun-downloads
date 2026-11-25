@@ -6,84 +6,116 @@ import base64
 import ctypes
 import datetime
 import io
+import math
 import queue
 import sys
+import tempfile
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import (BOTH, LEFT, RIGHT, X, Y, BooleanVar, IntVar, StringVar,
                      Tk, filedialog, messagebox, ttk)
 from tkinter import Text, font as tkfont
 
 try:
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageTk
 except ImportError:  # pragma: no cover  打包缺 Pillow 时退回文字符号
     Image = None
     ImageDraw = None
+    ImageTk = None
 
-from config import APP_NAME, APP_VERSION, DEFAULT_BASE_URL, open_path
+from config import (APP_NAME, APP_VERSION, DEFAULT_BASE_URL, load_settings,
+                    load_ui_theme, open_path, save_settings, save_ui_theme)
 from banshu_export import (BatchCancelled, RANGE_PRESETS,
-                           UNCLASSIFIED_GROUP, class_group, default_out_root,
-                           enrich_record_groups, export_records,
-                           fetch_class_names, fetch_records,
-                           group_board_records, ordered_group_names,
-                           record_time, resolve_range, scan_token,
-                           sort_records_newest_first)
+                           UNCLASSIFIED_GROUP, class_group,
+                           default_out_root, enrich_record_groups,
+                           export_records, fetch_class_names, fetch_records,
+                           group_board_records, group_display_names,
+                           group_sort_key, ordered_group_names,
+                           record_matches_class_list, record_time,
+                           resolve_range, scan_token,
+                           sort_records_newest_first, term_label)
 from login import LoginError, LoginResult, do_login
 from net import ApiSession, TokenExpired
-from homework_export import (HomeworkCancelled, class_short_name,
-                             default_out_root as homework_out_root,
-                             export_homeworks, fetch_homeworks,
-                             group_homeworks, homework_group, homework_time,
-                             homework_title, ordered_groups,
-                             summarize as summarize_homework)
+from feedback_export import (COMPONENT_ORDER, CONSOLIDATION, PREVIEW,
+                             FeedbackCancelled, build_feedback_bundles,
+                             feedback_component_name,
+                             default_out_root as feedback_out_root,
+                             export_feedback_bundles)
+from homework_export import (HomeworkCancelled, fetch_homeworks,
+                             homework_group, homework_time, homework_title)
 from pipeline import (Cancelled, ExportOptions, ExportSummary, NoClassesError,
                       PipelineError, run_export)
 from token_source import client_running, debug_port_open
+from theme_art import (THEME_DESCRIPTIONS, THEME_LABELS, THEME_ORDER,
+                       color_role, palette_for, render_app_icon, render_hero,
+                       render_settings_icon, render_theme_preview,
+                       render_user_asset, theme_key)
+from update_checker import check_for_update
 
 FONT = 'Microsoft YaHei UI'
 MONO = 'Consolas'
-
-# 作业列表里没有对应班级时的分组名（板书用的是 banshu_export 的「杂项/未分类」）
-UNCLASSIFIED_GROUP_NAME = '未分类'
-# 班级按钮最多摆这么多个（常见 3~6 个班）
-HOME_CLASS_LIMIT = 8
-
-
-def class_button_labels(names: list[str]) -> dict[str, str]:
-    """班级按钮上的短标签：2026027MA+31作业班 → 7MA+31。
-
-    如果不同班级压出来是同一个短名（比如 2026017MAA71 和 2026027MAA71），
-    这几个就退回用全名，保证一眼能分清。
-    """
-
-    short = {name: class_short_name(name) for name in names}
-    counts: dict[str, int] = {}
-    for value in short.values():
-        counts[value] = counts.get(value, 0) + 1
-    return {name: (short[name] if counts[short[name]] == 1 else name)
-            for name in names}
 
 
 # 方向：安静的课堂工具。表面用带一点纸张暖度的中性灰，绿色只留给
 # 主操作、选中状态和进度；彩色面积集中到“班级分组列表”和“导出进度”
 # 两个内容时刻，不再让标签/按钮抢戏。
-ACCENT = '#1f6b4e'
-ACCENT_DARK = '#14513a'
-ACCENT_SOFT = '#eaf2ed'
-TEXT_DARK = '#1b241f'
-TEXT_MUTED = '#5f6b63'
-TEXT_FAINT = '#6b776e'
-BG = '#f3f4f0'
-CARD = '#ffffff'
-SURFACE = '#f7f8f4'
-SURFACE_ALT = '#eef1eb'
-BORDER = '#e1e5de'
-BORDER_STRONG = '#cfd6ce'
-GROUP_BG = '#edf3ed'
-GROUP_MISC_BG = '#f2f3f0'
-CHECKED_BG = '#e1efe6'
+#
+# 三套主题共用下面这组语义色。启动时按保存的主题覆盖，切换时再把已有
+# 控件上的旧颜色按角色替换，所以控件代码仍然只写 BG / CARD / ACCENT。
+_DEFAULT_PALETTE = palette_for('light')
+ACCENT = _DEFAULT_PALETTE['ACCENT']
+ACCENT_DARK = _DEFAULT_PALETTE['ACCENT_DARK']
+ACCENT_TEXT = _DEFAULT_PALETTE['ACCENT_TEXT']
+ACCENT_SOFT = _DEFAULT_PALETTE['ACCENT_SOFT']
+ON_ACCENT = _DEFAULT_PALETTE['ON_ACCENT']
+TEXT_DARK = _DEFAULT_PALETTE['TEXT_DARK']
+TEXT_MUTED = _DEFAULT_PALETTE['TEXT_MUTED']
+TEXT_FAINT = _DEFAULT_PALETTE['TEXT_FAINT']
+BG = _DEFAULT_PALETTE['BG']
+CARD = _DEFAULT_PALETTE['CARD']
+SURFACE = _DEFAULT_PALETTE['SURFACE']
+SURFACE_ALT = _DEFAULT_PALETTE['SURFACE_ALT']
+BORDER = _DEFAULT_PALETTE['BORDER']
+BORDER_STRONG = _DEFAULT_PALETTE['BORDER_STRONG']
+CONTROL_BORDER = _DEFAULT_PALETTE['CONTROL_BORDER']
+GROUP_BG = _DEFAULT_PALETTE['GROUP_BG']
+GROUP_MISC_BG = _DEFAULT_PALETTE['GROUP_MISC_BG']
+CHECKED_BG = _DEFAULT_PALETTE['CHECKED_BG']
+# 进度卡片失败/取消时的状态色：不抢主色的绿，但一眼能区分
+WARN = _DEFAULT_PALETTE['WARN']
+DANGER = _DEFAULT_PALETTE['DANGER']
+# 以下颜色由主题切换使用，保留模块级别名方便自定义控件直接引用
+DISABLED_BG = _DEFAULT_PALETTE['DISABLED_BG']
+DISABLED_FG = _DEFAULT_PALETTE['DISABLED_FG']
+ACCENT_DISABLED = _DEFAULT_PALETTE['ACCENT_DISABLED']
+ON_ACCENT_DISABLED = _DEFAULT_PALETTE['ON_ACCENT_DISABLED']
+HOVER_STRONG = _DEFAULT_PALETTE['HOVER_STRONG']
+TRACK = _DEFAULT_PALETTE['TRACK']
+TRACK_SOFT = _DEFAULT_PALETTE['TRACK_SOFT']
+SCROLL = _DEFAULT_PALETTE['SCROLL']
+TEXT_BODY = _DEFAULT_PALETTE['TEXT_BODY']
+LINK = _DEFAULT_PALETTE['LINK']
+PROGRESS = _DEFAULT_PALETTE['PROGRESS']
+HERO_TEXT = _DEFAULT_PALETTE['HERO_TEXT']
+HERO_MUTED = _DEFAULT_PALETTE['HERO_MUTED']
+HERO_BTN_BG = _DEFAULT_PALETTE['HERO_BTN_BG']
+HERO_BTN_FG = _DEFAULT_PALETTE['HERO_BTN_FG']
+HERO_BTN_BORDER = _DEFAULT_PALETTE['HERO_BTN_BORDER']
+
+
+def _rgb(value: str) -> tuple[int, int, int]:
+    """#rrggbb -> PIL 用的 (r, g, b)。"""
+
+    raw = str(value or '').strip().lstrip('#')
+    if len(raw) != 6:
+        return (0, 0, 0)
+    try:
+        return (int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16))
+    except ValueError:
+        return (0, 0, 0)
 
 
 def _enable_dpi_awareness() -> None:
@@ -115,130 +147,235 @@ def _fmt_clock(seconds: float) -> str:
 
 
 class ProgressPanel:
-    """导出进度：独立小弹窗，不再占用页面里的位置。
+    """导出进度卡片。
 
-    任务开始时弹出（跟着主窗口走，居中偏下），完成后 2 秒自动关掉；
-    失败/取消时留着，按钮变成「关闭」让用户自己关。
-    ``compact=True`` 用于邀请码导出这种不需要子进度条的场景。
+    没有系统标题栏的小卡片：主进度、当前课堂页数、已用/剩余时间都收在
+    一张卡上。导出完成、失败或取消后都会自动收起，不再留下一个「导出
+    进度」窗口需要用户手动关。
     """
 
     def __init__(self, parent, cancel_command, compact: bool = False,
                  on_show=None, on_hide=None) -> None:
         self.compact = compact
         self._cancel_command = cancel_command
-        self._on_show = on_show        # 兼容旧签名，弹窗模式下不再使用
+        self._on_show = on_show
         self._on_hide = on_hide
         self.root = parent.winfo_toplevel()
         try:
             self._scale = max(1.0, float(self.root.winfo_fpixels('1i')) / 96.0)
         except Exception:  # noqa: BLE001
             self._scale = 1.0
+        self._width = self._px(500 if not compact else 430)
+        self._active = False
+        self._visible = False
+        self._state = 'idle'          # idle / running / done / failed
+        self._fail_cancelled = False
+        self._indeterminate = False
+        self._target_percent = 0.0
+        self._shown_percent = 0.0
+        self._sub_target = 0.0
+        self._sub_shown = 0.0
+        self._sub_visible = False
+        self._started = 0.0
+        self._elapsed_override = None
+        self._phase = 0.0
+        self._anim_job = None
+        self._hide_job = None
+        self._icon_key = None
+        self._icon_photo = None
+        self._drag_offset = None
 
         self.win = tk.Toplevel(self.root)
         self.win.withdraw()
-        self.win.title('导出进度')
+        self.win.overrideredirect(True)
         self.win.transient(self.root)
-        self.win.resizable(False, False)
         self.win.configure(bg=CARD)
         self.win.protocol('WM_DELETE_WINDOW', self.hide)
 
-        self.frame = tk.Frame(self.win, bg=CARD, bd=0,
-                              highlightbackground=BORDER,
-                              highlightthickness=1)
-        self.frame.pack(fill=BOTH, expand=True)
-        self.accent = tk.Frame(self.frame, bg=ACCENT, width=self._px(3))
-        self.accent.pack(side=LEFT, fill=Y)
-        self.body = ttk.Frame(self.frame, style='Card.TFrame',
-                              padding=(self._px(16), self._px(12),
-                                       self._px(12), self._px(12)))
-        self.body.pack(side=LEFT, fill=BOTH, expand=True)
+        self.card = tk.Frame(self.win, bg=CARD,
+                             highlightbackground=BORDER,
+                             highlightthickness=1)
+        self.card.pack(fill=BOTH, expand=True)
+        self.stripe = tk.Frame(self.card, bg=ACCENT, height=self._px(3))
+        self.stripe.pack(fill=X)
+        self.body = tk.Frame(self.card, bg=CARD)
+        self.body.pack(fill=BOTH, expand=True,
+                       padx=self._px(20), pady=(self._px(13), self._px(16)))
 
-        head = ttk.Frame(self.body, style='Card.TFrame')
+        head = tk.Frame(self.body, bg=CARD)
         head.pack(fill=X)
+        self.icon_canvas = tk.Canvas(head, width=self._px(30),
+                                     height=self._px(30), bg=CARD,
+                                     highlightthickness=0, bd=0)
+        self.icon_canvas.pack(side=LEFT, padx=(0, self._px(11)))
         self.title_var = StringVar(value='')
-        ttk.Label(head, textvariable=self.title_var,
-                  style='ProgressTitle.TLabel').pack(side=LEFT)
-        self.cancel_button = ttk.Button(
-            head, text='取消导出', style='Quiet.TButton',
-            command=self._primary_action, state='disabled')
-        self.cancel_button.pack(side=RIGHT)
+        self.title_label = tk.Label(
+            head, textvariable=self.title_var, bg=CARD, fg=TEXT_DARK,
+            anchor='w', font=(FONT, 12, 'bold'))
+        self.title_label.pack(side=LEFT, fill=X, expand=True)
         self.percent_var = StringVar(value='')
         self.percent_label = tk.Label(
-            head, textvariable=self.percent_var, bg=CARD, fg=ACCENT_DARK,
-            font=(MONO, 10, 'bold'))
-        self.percent_label.pack(side=RIGHT, padx=(0, self._px(12)))
-        self.elapsed_var = StringVar(value='')
-        tk.Label(head, textvariable=self.elapsed_var, bg=CARD, fg=TEXT_FAINT,
-                 font=(MONO, 9)).pack(side=RIGHT, padx=(0, self._px(16)))
+            head, textvariable=self.percent_var, bg=CARD, fg=LINK,
+            anchor='e', font=(MONO, 18, 'bold'))
+        self.percent_label.pack(side=RIGHT, padx=(self._px(10), 0))
 
         self.detail_var = StringVar(value='')
         self.detail_label = tk.Label(
             self.body, textvariable=self.detail_var, bg=CARD, fg=TEXT_MUTED,
-            font=(FONT, 10), anchor='w', justify=LEFT,
-            wraplength=self._px(420))
-        self.detail_label.pack(fill=X, pady=(self._px(2), self._px(8)))
+            anchor='w', justify=LEFT, font=(FONT, 10),
+            wraplength=self._width - self._px(46))
+        self.detail_label.pack(fill=X, pady=(self._px(7), 0))
 
-        self.bar = ttk.Progressbar(
-            self.body, mode='determinate', maximum=100, value=0,
-            style='Accent.Horizontal.TProgressbar', length=self._px(430))
-        self.bar.pack(fill=X)
+        self.bar_canvas = tk.Canvas(self.body, height=self._px(10), width=1,
+                                    bg=CARD, highlightthickness=0, bd=0)
+        self.bar_canvas.pack(fill=X, pady=(self._px(12), 0))
 
-        self.sub_row = ttk.Frame(self.body, style='Card.TFrame')
-        self.sub_detail = StringVar(value='')
-        tk.Label(self.sub_row, textvariable=self.sub_detail, bg=CARD,
-                 fg=TEXT_FAINT, font=(FONT, 9), anchor='w').pack(side=LEFT)
-        self.sub_bar = ttk.Progressbar(
-            self.sub_row, mode='determinate', maximum=100, value=0,
-            style='Thin.Horizontal.TProgressbar')
-        self.sub_bar.pack(side=RIGHT, fill=X, expand=True,
-                          padx=(self._px(16), 0))
+        # 子进度固定占位：阶段切换时窗口不会忽高忽低
+        self.sub_row = tk.Frame(self.body, bg=CARD)
+        self.sub_label_var = StringVar(value='')
+        self.sub_label = tk.Label(
+            self.sub_row, textvariable=self.sub_label_var, bg=CARD,
+            fg=TEXT_FAINT, font=(MONO, 9), anchor='w')
+        self.sub_label.pack(side=LEFT)
+        self.sub_canvas = tk.Canvas(self.sub_row, height=self._px(6), width=1,
+                                    bg=CARD, highlightthickness=0, bd=0)
+        self.sub_canvas.pack(side=RIGHT, fill=X, expand=True,
+                             padx=(self._px(12), 0))
 
-        self._started = 0.0
-        self._active = False
-        self._indeterminate = False
-        self._auto_hide_job = None
+        self.foot = tk.Frame(self.body, bg=CARD)
+        self.foot.pack(fill=X, pady=(self._px(11), 0))
+        self.elapsed_var = StringVar(value='')
+        self.elapsed_label = tk.Label(
+            self.foot, textvariable=self.elapsed_var, bg=CARD, fg=TEXT_FAINT,
+            font=(MONO, 9))
+        self.elapsed_label.pack(side=LEFT)
+        self.remain_var = StringVar(value='')
+        self.remain_label = tk.Label(
+            self.foot, textvariable=self.remain_var, bg=CARD, fg=TEXT_FAINT,
+            font=(MONO, 9))
+        self.remain_label.pack(side=LEFT, padx=(self._px(12), 0))
+        self.action_button = tk.Label(
+            self.foot, text='取消', bg=CARD, fg=LINK,
+            font=(FONT, 10, 'bold'), padx=self._px(12),
+            pady=self._px(4), cursor='hand2')
+        self.action_button.pack(side=RIGHT)
+        self._action_enabled = True
+        self.action_button.bind('<Button-1>', self._on_action_click)
 
+        # 拖动：没有标题栏，用卡片空白处拖
+        for widget in (self.card, self.stripe, self.body, head,
+                       self.title_label, self.icon_canvas, self.detail_label,
+                       self.bar_canvas, self.elapsed_label):
+            widget.bind('<Button-1>', self._start_drag)
+            widget.bind('<B1-Motion>', self._drag)
+        self.action_button.bind('<Enter>', self._action_hover)
+        self.action_button.bind('<Leave>', self._action_leave)
+        self.win.bind('<Escape>', lambda _e: self.hide())
+
+    # -- 基础 --------------------------------------------------------
     def _px(self, value: int) -> int:
         return max(1, int(round(value * self._scale)))
 
+    def _accent(self) -> str:
+        if self._state != 'failed':
+            return PROGRESS
+        return WARN if self._fail_cancelled else DANGER
+
     # -- 显示/隐藏 --------------------------------------------------
     def show(self) -> None:
-        self._cancel_auto_hide()
-        self.win.deiconify()
-        # 先显示出来再定位：某些窗口管理器会忽略隐藏窗口的 geometry
+        self._cancel_hide()
+        if self._visible:
+            self._render_all()
+            self._start_animation()
+            return
+        self._visible = True
         self.win.update_idletasks()
         self._place()
+        self.win.deiconify()
         self.win.lift()
-        # 主窗口设为置顶时，Toplevel 会被压在下面，闪一下置顶确保看得见
         try:
             self.win.attributes('-topmost', True)
-            self.win.after(400,
-                           lambda: self.win.attributes('-topmost', False))
+            self.win.after(380, self._drop_topmost)
+        except Exception:  # noqa: BLE001
+            pass
+        if self._on_show is not None:
+            try:
+                self._on_show()
+            except Exception:  # noqa: BLE001
+                pass
+        self._render_all()
+        self._start_animation()
+
+    def hide(self) -> None:
+        self._cancel_hide()
+        self._stop_animation()
+        self._active = False
+        self._state = 'idle'
+        self._visible = False
+        try:
+            self.win.withdraw()
+        except Exception:  # noqa: BLE001
+            pass
+        if self._on_hide is not None:
+            try:
+                self._on_hide()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _drop_topmost(self) -> None:
+        try:
+            self.win.attributes('-topmost', False)
         except Exception:  # noqa: BLE001
             pass
 
-    def hide(self) -> None:
-        self._cancel_auto_hide()
-        self.win.withdraw()
-
     def _place(self) -> None:
-        """贴着主窗口居中偏下，别跑到屏幕外面。"""
+        """贴着主窗口居中偏下，别跑到屏幕外。"""
 
         try:
             self.win.update_idletasks()
-            width = max(self._px(460), self.win.winfo_reqwidth())
-            height = self.win.winfo_reqheight()
+            width = self._width
+            height = max(self._px(118), self.win.winfo_reqheight())
             x = self.root.winfo_rootx() + (
                 self.root.winfo_width() - width) // 2
-            y = self.root.winfo_rooty() + self.root.winfo_height() - height - self._px(96)
+            y = (self.root.winfo_rooty() + self.root.winfo_height()
+                 - height - self._px(88))
             x = max(0, min(x, self.win.winfo_screenwidth() - width))
             y = max(0, min(y, self.win.winfo_screenheight() - height
-                           - self._px(48)))
+                           - self._px(40)))
             self.win.geometry('%dx%d+%d+%d' % (width, height, x, y))
             self.win.update_idletasks()
         except Exception:  # noqa: BLE001
             pass
 
+    def _resize_to_content(self) -> None:
+        """完成/失败收起子进度后，贴着底边重新量一次高度。"""
+
+        try:
+            self.win.update_idletasks()
+            height = max(self._px(112), self.win.winfo_reqheight())
+            x = self.win.winfo_x()
+            bottom = self.win.winfo_y() + self.win.winfo_height()
+            y = max(0, bottom - height)
+            self.win.geometry('%dx%d+%d+%d' % (self._width, height, x, y))
+            self.win.update_idletasks()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _start_drag(self, event) -> None:
+        self._drag_offset = (event.x_root - self.win.winfo_x(),
+                             event.y_root - self.win.winfo_y())
+
+    def _drag(self, event) -> None:
+        if self._drag_offset is None:
+            return
+        x = event.x_root - self._drag_offset[0]
+        y = event.y_root - self._drag_offset[1]
+        try:
+            self.win.geometry('+%d+%d' % (max(0, x), max(0, y)))
+        except Exception:  # noqa: BLE001
+            pass
+
+    # -- 按钮 --------------------------------------------------------
     def _primary_action(self) -> None:
         if self._active:
             if self._cancel_command is not None:
@@ -246,45 +383,78 @@ class ProgressPanel:
             return
         self.hide()
 
-    def _schedule_auto_hide(self, delay_ms: int = 2200) -> None:
-        self._cancel_auto_hide()
-        self._auto_hide_job = self.win.after(delay_ms, self.hide)
+    def _on_action_click(self, _event=None) -> None:
+        if self._action_enabled:
+            self._primary_action()
 
-    def _cancel_auto_hide(self) -> None:
-        if self._auto_hide_job is not None:
-            try:
-                self.win.after_cancel(self._auto_hide_job)
-            except Exception:  # noqa: BLE001
-                pass
-            self._auto_hide_job = None
+    def _set_button(self, text: str, enabled: bool) -> None:
+        self._action_enabled = bool(enabled)
+        self.action_button.configure(
+            text=text, fg=LINK if enabled else TEXT_FAINT,
+            cursor='hand2' if enabled else 'arrow')
+
+    def _action_hover(self, _event=None) -> None:
+        if self._action_enabled:
+            self.action_button.configure(
+                bg=ACCENT_SOFT if self._active else SURFACE_ALT)
+
+    def _action_leave(self, _event=None) -> None:
+        self.action_button.configure(bg=CARD)
+
+    def apply_theme(self) -> None:
+        """主题切换后重画进度环、进度条和按钮悬停色。"""
+
+        self.card.configure(bg=CARD, highlightbackground=BORDER)
+        self.win.configure(bg=CARD)
+        self.stripe.configure(bg=ACCENT)
+        self._render_all()
+        self._render_icon(force=True)
+        self._set_button(self.action_button.cget('text'),
+                         self._action_enabled)
 
     # -- 状态 --------------------------------------------------------
+    @staticmethod
+    def _detail_text(detail: str, hint: str) -> str:
+        if not hint:
+            return detail
+        separator = ('  ' if detail and detail[-1] in '。！？.!?' else '  ·  ')
+        return detail + separator + hint
+
     def begin(self, title: str, detail: str = '',
               indeterminate: bool = False, hint: str = '',
               cancellable: bool = True) -> None:
-        self._cancel_auto_hide()
+        self._cancel_hide()
         self._started = time.monotonic()
         self._active = True
+        self._state = 'running'
+        self._fail_cancelled = False
+        self._indeterminate = bool(indeterminate)
+        self._target_percent = 0.0
+        self._shown_percent = 0.0
+        self._sub_target = 0.0
+        self._sub_shown = 0.0
+        self._elapsed_override = None
+        self._phase = 0.0
+        self._icon_key = None
         self.title_var.set(title)
         self.detail_var.set(
-            detail + ('  ·  ' + hint if hint and not self.compact else ''))
-        self.percent_var.set('')
-        self.elapsed_var.set('00:00')
-        self.sub_detail.set('')
-        self.sub_bar.configure(value=0)
-        self.bar.stop()
-        self.bar.configure(
-            mode='indeterminate' if indeterminate else 'determinate',
-            maximum=100, value=0)
-        self._indeterminate = bool(indeterminate)
+            self._detail_text(detail, hint if not self.compact else ''))
         if indeterminate:
-            self.bar.start(12)
-        self.cancel_button.configure(
-            command=self._primary_action,
-            state='normal' if cancellable else 'disabled',
-            text='取消' if cancellable else '请稍候')
-        if not self.compact:
-            self.sub_row.pack(fill=X, pady=(self._px(4), 0))
+            self.percent_var.set('进行中')
+            self.percent_label.configure(font=(FONT, 11, 'bold'), fg=LINK)
+        else:
+            self.percent_var.set('0%')
+            self.percent_label.configure(font=(MONO, 18, 'bold'), fg=LINK)
+        self.stripe.configure(bg=ACCENT)
+        self.elapsed_var.set('用时 00:00')
+        self.remain_var.set('')
+        # 子进度只在真的拿到页数时出现：列清单阶段不占这一行
+        self._hide_sub_row()
+        self.sub_label_var.set('')
+        self._sub_target = 0.0
+        self._sub_shown = 0.0
+        self._set_button('取消' if cancellable else '请稍候', cancellable)
+        self._render_all()
         self.show()
 
     def update(self, percent: float, detail: str | None = None,
@@ -296,67 +466,293 @@ class ProgressPanel:
             return
         if indeterminate:
             if not self._indeterminate:
-                self.bar.stop()
-                self.bar.configure(mode='indeterminate', maximum=100, value=0)
-                self.bar.start(12)
                 self._indeterminate = True
-            self.percent_var.set('')
+                self._target_percent = 0.0
+                self._shown_percent = 0.0
+            self.percent_var.set('进行中')
+            self.percent_label.configure(font=(FONT, 11, 'bold'), fg=LINK)
         else:
             if self._indeterminate:
-                self.bar.stop()
-                self.bar.configure(mode='determinate', maximum=100, value=0)
                 self._indeterminate = False
-            value = max(0.0, min(100.0, float(percent or 0)))
-            self.bar.configure(value=value)
-            self.percent_var.set('%d%%' % int(round(value)))
+                self._shown_percent = 0.0
+            self._target_percent = max(0.0, min(100.0, float(percent or 0)))
+            self.percent_var.set('%d%%' % int(round(self._target_percent)))
+            self.percent_label.configure(font=(MONO, 18, 'bold'), fg=LINK)
         if detail is not None:
-            self.detail_var.set(detail)
-        if elapsed is None:
-            elapsed = time.monotonic() - self._started
-        self.elapsed_var.set(_fmt_clock(elapsed))
-        if sub_detail is not None:
-            self.sub_detail.set(sub_detail)
+            self.detail_var.set(str(detail))
+        if elapsed is not None:
+            self._elapsed_override = max(0.0, float(elapsed))
+        if sub_detail:
+            self._ensure_sub_row()
+            self.sub_label_var.set(str(sub_detail))
+        elif self._sub_visible:
+            self.sub_label_var.set('当前课堂页数')
+            self._sub_target = 0.0
         if sub_percent is not None:
-            self.sub_bar.configure(
-                value=max(0.0, min(100.0, float(sub_percent))))
+            self._ensure_sub_row()
+            self._sub_target = max(0.0, min(100.0, float(sub_percent)))
+        self._render_bars()
+        self._render_clock()
+        self._start_animation()
 
-    def complete(self, title: str, detail: str,
-                 hint: str = '') -> None:
+    def complete(self, title: str, detail: str, hint: str = '') -> None:
         self._active = False
-        self.bar.stop()
-        self.bar.configure(mode='determinate', maximum=100, value=100)
-        self.percent_var.set('100%')
-        self.elapsed_var.set(_fmt_clock(
-            time.monotonic() - self._started if self._started else 0))
+        self._state = 'done'
+        self._fail_cancelled = False
+        self._indeterminate = False
+        self._target_percent = 100.0
         self.title_var.set(title)
-        self.detail_var.set(detail + ('  ·  ' + hint if hint else ''))
-        self.cancel_button.configure(command=self._primary_action,
-                                     state='normal', text='关闭')
-        if not self.compact:
-            self.sub_row.pack_forget()
+        self.detail_var.set(self._detail_text(detail, hint))
+        self.percent_var.set('100%')
+        self.percent_label.configure(font=(MONO, 18, 'bold'), fg=LINK)
+        self.stripe.configure(bg=ACCENT)
+        self.elapsed_var.set('用时 ' + _fmt_clock(self._elapsed()))
+        self.remain_var.set('')
+        self._set_button('关闭', True)
+        self._hide_sub_row()
         self.show()
-        self._schedule_auto_hide()
+        self._resize_to_content()
+        self._schedule_hide(1800)
 
     def fail(self, title: str, detail: str, hint: str = '',
              state: str = '已取消') -> None:
         self._active = False
-        self.bar.stop()
-        self.bar.configure(mode='determinate')
+        self._state = 'failed'
+        self._fail_cancelled = (state == '已取消')
+        self._indeterminate = False
+        color = self._accent()
         self.title_var.set(title)
-        self.detail_var.set(detail + ('  ·  ' + hint if hint else ''))
-        self.elapsed_var.set(_fmt_clock(
-            time.monotonic() - self._started if self._started else 0))
-        self.cancel_button.configure(command=self._primary_action,
-                                     state='normal', text='关闭')
-        if not self.compact:
-            self.sub_row.pack_forget()
+        self.detail_var.set(self._detail_text(detail, hint))
+        state_text = state or ''
+        if state_text == title:
+            state_text = ''
+        self.percent_var.set(state_text)
+        self.percent_label.configure(font=(FONT, 11, 'bold'), fg=color)
+        self.stripe.configure(bg=color)
+        self.elapsed_var.set('用时 ' + _fmt_clock(self._elapsed()))
+        self.remain_var.set('')
+        self._set_button('关闭', True)
+        self._hide_sub_row()
         self.show()
+        self._resize_to_content()
+        self._schedule_hide(3200 if self._fail_cancelled else 3800)
 
     def tick(self) -> None:
-        if self._active and self._started:
-            self.elapsed_var.set(_fmt_clock(time.monotonic() - self._started))
+        if self._active:
+            self._render_clock()
 
+    # -- 自动收起 ----------------------------------------------------
+    def _schedule_hide(self, delay_ms: int) -> None:
+        self._cancel_hide()
+        self._hide_job = self.win.after(delay_ms, self._auto_hide)
 
+    def _auto_hide(self) -> None:
+        self._hide_job = None
+        self.hide()
+
+    def _cancel_hide(self) -> None:
+        if self._hide_job is not None:
+            try:
+                self.win.after_cancel(self._hide_job)
+            except Exception:  # noqa: BLE001
+                pass
+            self._hide_job = None
+
+    # -- 动画 --------------------------------------------------------
+    def _start_animation(self) -> None:
+        if self._visible and self._anim_job is None:
+            try:
+                self._anim_job = self.win.after(40, self._animate)
+            except Exception:  # noqa: BLE001
+                self._anim_job = None
+
+    def _stop_animation(self) -> None:
+        if self._anim_job is not None:
+            try:
+                self.win.after_cancel(self._anim_job)
+            except Exception:  # noqa: BLE001
+                pass
+            self._anim_job = None
+
+    def _animate(self) -> None:
+        self._anim_job = None
+        if not self._visible:
+            return
+        self._phase += 0.11
+        moving = False
+        if self._indeterminate and self._state == 'running':
+            moving = True
+        else:
+            delta = self._target_percent - self._shown_percent
+            if abs(delta) > 0.05:
+                # 完成时让进度条快速补满，别停在「100% 但条没满」的样子
+                factor = 0.45 if self._state == 'done' else 0.24
+                self._shown_percent += delta * factor
+                moving = True
+            else:
+                self._shown_percent = self._target_percent
+            sub_delta = self._sub_target - self._sub_shown
+            if abs(sub_delta) > 0.05:
+                self._sub_shown += sub_delta * 0.3
+                moving = True
+            else:
+                self._sub_shown = self._sub_target
+        self._render_bars()
+        self._render_clock()
+        if self._indeterminate or self._state == 'running':
+            self._render_icon()
+        if self._state == 'running' or moving:
+            try:
+                self._anim_job = self.win.after(40, self._animate)
+            except Exception:  # noqa: BLE001
+                self._anim_job = None
+
+    # -- 绘制 --------------------------------------------------------
+    def _render_all(self) -> None:
+        self._render_bars()
+        self._render_clock()
+        self._render_icon(force=True)
+
+    def _hide_sub_row(self) -> None:
+        if self.sub_row.winfo_manager():
+            self.sub_row.pack_forget()
+        self._sub_visible = False
+
+    def _ensure_sub_row(self) -> None:
+        """第一次拿到页数时才把子进度行加进来，列清单时不占位置。"""
+
+        if self.compact or self._sub_visible:
+            return
+        self.sub_row.pack(fill=X, pady=(self._px(9), 0), before=self.foot)
+        self._sub_visible = True
+        self._resize_to_content()
+        self._render_bars()
+
+    def _elapsed(self) -> float:
+        if self._elapsed_override is not None:
+            return self._elapsed_override
+        return time.monotonic() - self._started if self._started else 0.0
+
+    def _render_clock(self) -> None:
+        elapsed = self._elapsed()
+        self.elapsed_var.set('用时 ' + _fmt_clock(elapsed))
+        if self._state == 'running' and not self._indeterminate:
+            percent = max(self._target_percent, self._shown_percent)
+            if percent >= 3 and elapsed >= 2:
+                remain = elapsed * (100.0 - percent) / percent
+                self.remain_var.set('剩余约 ' + _fmt_clock(remain))
+            else:
+                self.remain_var.set('')
+        else:
+            self.remain_var.set('')
+
+    def _render_bars(self) -> None:
+        self._draw_bar(self.bar_canvas, self._shown_percent / 100.0,
+                       self._px(10), self._accent(),
+                       indeterminate=(self._indeterminate
+                                      and self._state == 'running'))
+        if self._sub_visible:
+            self._draw_bar(self.sub_canvas, self._sub_shown / 100.0,
+                           self._px(6), PROGRESS)
+
+    def _draw_bar(self, canvas, ratio: float, height: int, color: str,
+                  indeterminate: bool = False) -> None:
+        canvas.delete('all')
+        width = canvas.winfo_width()
+        if width <= 1:
+            width = self._width - self._px(40)
+        if width <= height:
+            return
+        self._round_bar(canvas, 0, width, height, TRACK)
+        if indeterminate:
+            span = max(height * 2, int(width * 0.30))
+            travel = max(1, width - span)
+            position = (math.sin(self._phase * 0.9) * 0.5 + 0.5) * travel
+            self._round_bar(canvas, position, span, height, color)
+        elif ratio > 0:
+            filled = int(width * ratio)
+            filled = max(height, min(width, filled))
+            self._round_bar(canvas, 0, filled, height, color)
+
+    @staticmethod
+    def _round_bar(canvas, x: float, width: float, height: int,
+                   color: str) -> None:
+        if width <= 0:
+            return
+        radius = height / 2.0
+        if width <= height:
+            canvas.create_oval(x, 0, x + width, height,
+                               fill=color, outline=color)
+            return
+        canvas.create_oval(x, 0, x + height, height,
+                           fill=color, outline=color)
+        canvas.create_oval(x + width - height, 0, x + width, height,
+                           fill=color, outline=color)
+        canvas.create_rectangle(x + radius, 0, x + width - radius, height,
+                                fill=color, outline=color)
+
+    def _render_icon(self, force: bool = False) -> None:
+        if Image is None or ImageDraw is None or ImageTk is None:
+            return
+        ratio = 0.0
+        if self._state == 'done':
+            ratio = 1.0
+        elif self._state == 'running' and not self._indeterminate:
+            ratio = max(0.0, min(1.0, self._shown_percent / 100.0))
+        key = (self._state,
+               int(round(ratio * 24)),
+               int(self._phase * 3) if self._indeterminate else 0)
+        if not force and key == self._icon_key:
+            return
+        self._icon_key = key
+        size = self._px(30)
+        scale = 4
+        pixels = max(16, size) * scale
+        image = Image.new('RGBA', (pixels, pixels), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        pad = 3 * scale
+        line = max(2 * scale, int(pixels * 0.075))
+        color = self._accent()
+        track = _rgb(TRACK) + (255,)
+        draw.ellipse((pad, pad, pixels - pad, pixels - pad),
+                     outline=track, width=line)
+        center = pixels / 2.0
+        if self._state == 'failed':
+            draw.ellipse((pad, pad, pixels - pad, pixels - pad),
+                         outline=color, width=line)
+            stroke = max(2 * scale, int(pixels * 0.09))
+            draw.line((center, pixels * 0.27, center, pixels * 0.55),
+                      fill=color, width=stroke)
+            dot = max(2.0, pixels * 0.045)
+            draw.ellipse((center - dot, pixels * 0.66 - dot,
+                          center + dot, pixels * 0.66 + dot), fill=color)
+        elif self._state == 'done':
+            draw.ellipse((pad, pad, pixels - pad, pixels - pad),
+                         outline=color, width=line)
+            stroke = max(2 * scale, int(pixels * 0.09))
+            draw.line([(pixels * 0.29, pixels * 0.52),
+                       (pixels * 0.44, pixels * 0.67),
+                       (pixels * 0.72, pixels * 0.36)],
+                      fill=color, width=stroke, joint='curve')
+        elif self._indeterminate:
+            start = (self._phase * 130.0) % 360.0 - 90.0
+            draw.arc((pad, pad, pixels - pad, pixels - pad),
+                     start, start + 110.0, fill=color, width=line)
+        else:
+            end = -90.0 + 360.0 * ratio
+            draw.arc((pad, pad, pixels - pad, pixels - pad),
+                     -90.0, end, fill=color, width=line)
+            dot = max(2.0, pixels * 0.045)
+            draw.ellipse((center - dot, center - dot,
+                          center + dot, center + dot), fill=color)
+        try:
+            photo = ImageTk.PhotoImage(
+                image.resize((size, size), Image.Resampling.LANCZOS))
+            self.icon_canvas.delete('all')
+            self.icon_canvas.create_image(size / 2, size / 2, image=photo)
+            self._icon_photo = photo
+        except Exception:  # noqa: BLE001
+            pass
 
 
 class LogPanel:
@@ -394,7 +790,7 @@ class LogPanel:
             side=RIGHT, padx=(0, self._px(8)) if collapsible else 0)
 
         self.text = Text(self.body, height=height, width=1, wrap='char',
-                         relief='flat', bg=SURFACE, fg='#3d484f',
+                         relief='flat', bg=SURFACE, fg=TEXT_BODY,
                          highlightthickness=0, font=(MONO, 10),
                          padx=self._px(12), pady=self._px(10),
                          spacing1=self._px(2), spacing3=self._px(2),
@@ -489,9 +885,17 @@ class App:
             self.root.tk.call('tk', 'scaling', dpi / 72.0)
         except Exception:  # noqa: BLE001
             self.ui_factor = 1.0
+        self.theme_key = theme_key(load_ui_theme())
+        self._install_palette(self.theme_key)
+        self._check_refreshers: list = []
+        self._settings_window = None
+        self.settings_update_status = StringVar(value='')
+        self.update_button = None
         self._apply_window_geometry()
         self.root.configure(bg=BG)
         self.root.protocol('WM_DELETE_WINDOW', self.on_close)
+        # 班级条的宽度预算要用真实字体量：按钮文字长度随 DPI 变化
+        self._class_chip_font = tkfont.Font(family=FONT, size=10)
         try:
             base = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
             icon = base / 'app.ico'
@@ -507,7 +911,8 @@ class App:
         self.summary: ExportSummary | None = None
 
         self.busy = BooleanVar(value=False)
-        self.status = StringVar(value='免重启模式：点「导出邀请码 Excel」，直接读取已登录客户端的会话。')
+        self.status = StringVar(
+            value='免重启模式：点「导出邀请码 Excel」，直接读取已登录客户端的会话。')
         self.past_days = IntVar(value=0)
         self.workers = IntVar(value=8)
         self.include_details = BooleanVar(value=True)
@@ -524,7 +929,7 @@ class App:
             value=(today - datetime.timedelta(days=29)).strftime('%Y-%m-%d'))
         self.board_to = StringVar(value=today.strftime('%Y-%m-%d'))
         self.board_sort = StringVar(value='按上课顺序')
-        self.board_meta = StringVar(value='识别本机登录态并列出板书后，将按班级分组显示')
+        self.board_meta = StringVar(value='识别本机登录态并列出板书后，将按「学期+班级」分组显示')
         self.login_result: LoginResult | None = None
         self.board_token = ''
         self.board_origin = ''                    # 'client' / 'account'
@@ -540,26 +945,41 @@ class App:
         self.board_class_names: list[str] = []    # 爱问云班级列表
         self.board_group_of: dict[int, str] = {}  # id(记录) -> 班级名（导出分文件夹用）
         self.board_groups: dict[str, list[dict]] = {}
+        self.board_group_labels: dict[str, str] = {}   # 官方班名 -> 26秋7MA+31
+        self.board_display_order: list[str] = []       # 官方班名，按学期排好
         self.board_active_class = ''
+        self._board_relayout_job = None
+        self._board_bar_width = 0
+        self._board_menu_ref = None
         self._pending_list = False                # 忙碌中收到的时间段切换请求
 
-        # 作业导出：按班级分组的作业框清单，一个作业框一个 CSV
-        self.homework_range = StringVar(value='最近30天')
-        self.homework_from = StringVar(
+        # 反馈文件导出：历史课堂专注度反馈，按班级归档
+        self.feedback_range = StringVar(value='最近30天')
+        self.feedback_from = StringVar(
             value=(today - datetime.timedelta(days=29)).strftime('%Y-%m-%d'))
-        self.homework_to = StringVar(value=today.strftime('%Y-%m-%d'))
-        self.homework_meta = StringVar(
-            value='识别本机登录态后，将按班级分组列出作业框')
-        self.homework_items: list[dict] = []      # 「列出作业」的结果
-        self.homework_groups: dict[str, list[dict]] = {}
-        self.homework_class_order: list[str] = []
-        self.homework_active_class = ''
-        self.homework_checked: dict[str, bool] = {}
-        self._pending_homework_list = False
-        self._pending_homework_auto = False
+        self.feedback_to = StringVar(value=today.strftime('%Y-%m-%d'))
+        self.feedback_meta = StringVar(
+            value='识别本机登录态后，将按班级列出历史课堂')
+        self.feedback_items: list[dict] = []
+        self.feedback_class_order: list[str] = []
+        self.feedback_checked: dict[str, bool] = {}
+        self.feedback_file_checked: dict[str, bool] = {}
+        self.feedback_expanded: dict[str, bool] = {}
+        self.feedback_group_of: dict[str, str] = {}
+        self.feedback_active_class = '全部班级'
+        self.feedback_class_buttons: dict[str, tk.Button] = {}
+        self.feedback_more_button: tk.Button | None = None
+        self._feedback_hidden_count = 0
+        self._feedback_relayout_job = None
+        self._feedback_bar_width = 0
+        self._feedback_menu_ref = None
+        self._pending_feedback_list = False
+        self._pending_feedback_auto = False
+        self._update_busy = False
         self.view = 'invite'
 
         self._build_ui()
+        self._apply_window_icon()
         self.root.after(80, self._drain_queue)
         self.root.after(500, self._tick_progress)
         self.root.after(280, self._start_client_scan)
@@ -568,7 +988,7 @@ class App:
         self.root.bind('<Control-Key-2>',
                        lambda _e: self._switch_view('board'))
         self.root.bind('<Control-Key-3>',
-                       lambda _e: self._switch_view('homework'))
+                       lambda _e: self._switch_view('feedback'))
 
     def _apply_window_geometry(self) -> None:
         """按屏幕大小定窗口尺寸，避免 1440x900 等小屏底部被任务栏裁掉。"""
@@ -588,6 +1008,406 @@ class App:
         """按当前 DPI 缩放一个像素值。"""
 
         return max(1, int(round(value * self.ui_factor)))
+
+    # ---------- 主题 ----------
+    def _install_palette(self, key: str) -> None:
+        """把当前主题的语义色写回模块级名字，旧控件代码无需改写。"""
+
+        self.theme_key = theme_key(key)
+        palette = palette_for(self.theme_key)
+        globals().update(palette)
+        self.palette = palette
+
+    def apply_theme(self, key: str, persist: bool = True) -> None:
+        """切换主题：背景、图标、ttk 样式和所有已存在控件一起换色。"""
+
+        key = theme_key(key)
+        self._install_palette(key)
+        self._recolor_widgets()
+        self._configure_styles()
+        self._refresh_check_widgets()
+        self._refresh_tree_styles()
+        try:
+            self.root.configure(bg=BG)
+        except Exception:  # noqa: BLE001
+            pass
+        self._switch_view(self.view)
+        self._refresh_hero_chrome()
+        self._render_hero(force=True)
+        self._apply_window_icon()
+
+        for panel in (getattr(self, 'invite_progress', None),
+                      getattr(self, 'board_progress', None),
+                      getattr(self, 'feedback_progress', None)):
+            if panel is not None:
+                try:
+                    panel.apply_theme()
+                except Exception:  # noqa: BLE001
+                    pass
+
+        # 班级按钮和列表里的勾选图标缓存了旧位图，按当前数据重建一遍。
+        try:
+            if getattr(self, 'board_groups', None) and self.board_active_class:
+                self._build_board_class_buttons()
+                self._show_board_class(self.board_active_class)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if getattr(self, 'feedback_items', None):
+                self._build_feedback_class_buttons()
+                self._show_feedback_rows()
+        except Exception:  # noqa: BLE001
+            pass
+
+        self._refresh_empty_states()
+        self._refresh_settings_ui()
+        if persist:
+            save_ui_theme(key)
+
+    def _recolor_widgets(self) -> None:
+        """按颜色角色遍历整棵控件树，把旧主题色替换成新主题色。"""
+
+        options = ('background', 'bg', 'foreground', 'fg',
+                   'activebackground', 'activeforeground',
+                   'highlightbackground', 'highlightcolor',
+                   'selectbackground', 'selectforeground',
+                   'insertbackground', 'disabledforeground',
+                   'readonlybackground', 'troughcolor', 'selectcolor')
+        palette = self.palette
+
+        def mapped(value):
+            role = color_role(value)
+            return palette.get(role) if role else None
+
+        def recolor(widget) -> None:
+            if not isinstance(widget, ttk.Widget):
+                for option in options:
+                    try:
+                        current = str(widget.cget(option))
+                    except Exception:  # noqa: BLE001
+                        continue
+                    target = mapped(current)
+                    if target and target.lower() != current.lower():
+                        try:
+                            widget.configure(**{option: target})
+                        except Exception:  # noqa: BLE001
+                            pass
+                if isinstance(widget, tk.Text):
+                    for tag in widget.tag_names():
+                        for option in ('background', 'foreground'):
+                            try:
+                                current = str(widget.tag_cget(tag, option))
+                            except Exception:  # noqa: BLE001
+                                continue
+                            target = mapped(current)
+                            if target:
+                                try:
+                                    widget.tag_configure(tag,
+                                                         **{option: target})
+                                except Exception:  # noqa: BLE001
+                                    pass
+                if isinstance(widget, tk.Canvas):
+                    for item in widget.find_all():
+                        for option in ('fill', 'outline'):
+                            try:
+                                current = str(widget.itemcget(item, option))
+                            except Exception:  # noqa: BLE001
+                                continue
+                            target = mapped(current)
+                            if target:
+                                try:
+                                    widget.itemconfigure(
+                                        item, **{option: target})
+                                except Exception:  # noqa: BLE001
+                                    pass
+            try:
+                children = widget.winfo_children()
+            except Exception:  # noqa: BLE001
+                children = []
+            for child in children:
+                recolor(child)
+
+        try:
+            recolor(self.root)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _refresh_check_widgets(self) -> None:
+        for refresh in list(getattr(self, '_check_refreshers', [])):
+            try:
+                refresh()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _refresh_tree_styles(self) -> None:
+        for name in ('board_tree', 'feedback_tree'):
+            tree = getattr(self, name, None)
+            if tree is None:
+                continue
+            try:
+                tree.tag_configure('unchecked', background=CARD,
+                                   foreground=TEXT_DARK)
+                tree.tag_configure('checked', background=CHECKED_BG,
+                                   foreground=TEXT_DARK)
+                if tree is getattr(self, 'feedback_tree', None):
+                    # 展开后的子文件行用另一套底色，和父行一眼分开。
+                    tree.tag_configure('child_unchecked', background=SURFACE,
+                                       foreground=TEXT_BODY)
+                    tree.tag_configure('child_checked',
+                                       background=SURFACE_ALT,
+                                       foreground=TEXT_BODY)
+            except Exception:  # noqa: BLE001
+                pass
+
+    # ---------- 设置窗口 ----------
+    def open_settings(self) -> None:
+        win = getattr(self, '_settings_window', None)
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            try:
+                win.focus_force()
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        self._build_settings_window()
+
+    def _build_settings_window(self) -> None:
+        win = tk.Toplevel(self.root)
+        self._settings_window = win
+        win.title('设置 · %s' % APP_NAME)
+        win.configure(bg=BG)
+        win.transient(self.root)
+        win.resizable(False, False)
+        try:
+            win.iconphoto(True, *getattr(self, '_window_icons', []))
+            if sys.platform == 'win32' and getattr(
+                    self, '_theme_icon_path', ''):
+                win.iconbitmap(self._theme_icon_path)
+        except Exception:  # noqa: BLE001
+            pass
+
+        body = tk.Frame(win, bg=BG, padx=self.px(24), pady=self.px(20))
+        body.pack(fill=BOTH, expand=True)
+
+        head = tk.Frame(body, bg=BG)
+        head.pack(fill=X)
+        logo_image = render_app_icon(self.theme_key, self.px(44))
+        if logo_image is not None and ImageTk is not None:
+            logo_photo = ImageTk.PhotoImage(logo_image)
+            logo = tk.Label(head, image=logo_photo, bg=BG, bd=0)
+            logo.image = logo_photo
+            logo.pack(side=LEFT, padx=(0, self.px(14)))
+            self._settings_logo = logo
+        title_box = tk.Frame(head, bg=BG)
+        title_box.pack(side=LEFT, fill=X, expand=True)
+        tk.Label(title_box, text='设置', bg=BG, fg=TEXT_DARK,
+                 font=(FONT, 18, 'bold'), anchor='w').pack(anchor='w')
+        tk.Label(title_box,
+                 text='更新程序，或给背景、图标和界面换一套主题',
+                 bg=BG, fg=TEXT_MUTED, font=(FONT, 10), anchor='w').pack(
+                     anchor='w', pady=(self.px(2), 0))
+        close_button = ttk.Button(head, text='关闭',
+                                  style='SettingsQuiet.TButton',
+                                  command=win.destroy)
+        close_button.pack(side=RIGHT, anchor='n')
+
+        # ---- 一键更新 ----
+        update_card = tk.Frame(body, bg=CARD, bd=0, highlightthickness=1,
+                               highlightbackground=BORDER)
+        update_card.pack(fill=X, pady=(self.px(18), 0))
+        update_body = ttk.Frame(update_card, style='Card.TFrame',
+                                padding=(self.px(16), self.px(14)))
+        update_body.pack(fill=BOTH, expand=True)
+        update_head = ttk.Frame(update_body, style='Card.TFrame')
+        update_head.pack(fill=X)
+        ttk.Label(update_head, text='软件更新',
+                  style='SettingsCardTitle.TLabel').pack(side=LEFT)
+        ttk.Label(update_head, text='当前 v%s' % APP_VERSION,
+                  style='SettingsCardSub.TLabel').pack(side=RIGHT)
+        ttk.Label(update_body,
+                  text='一键检查新版本；发现更新后可直接打开下载页。'
+                       '沿用原有更新检查逻辑。',
+                  style='SettingsBody.TLabel', wraplength=self.px(520),
+                  justify=LEFT).pack(anchor='w', pady=(self.px(3), 0))
+        update_row = ttk.Frame(update_body, style='Card.TFrame')
+        update_row.pack(fill=X, pady=(self.px(10), 0))
+        self.update_button = ttk.Button(
+            update_row, text='一键更新', style='Settings.TButton',
+            command=self.on_check_update)
+        self.update_button.pack(side=LEFT)
+        self.settings_status_label = ttk.Label(
+            update_row, textvariable=self.settings_update_status,
+            style='SettingsCardSub.TLabel', justify=LEFT,
+            wraplength=self.px(380))
+        self.settings_status_label.pack(side=LEFT, padx=(self.px(12), 0))
+        if not self.settings_update_status.get():
+            self.settings_update_status.set('尚未检查更新')
+
+        # ---- 主题 ----
+        theme_card = tk.Frame(body, bg=CARD, bd=0, highlightthickness=1,
+                              highlightbackground=BORDER)
+        theme_card.pack(fill=X, pady=(self.px(14), 0))
+        theme_body = ttk.Frame(theme_card, style='Card.TFrame',
+                               padding=(self.px(16), self.px(14)))
+        theme_body.pack(fill=BOTH, expand=True)
+        theme_head = ttk.Frame(theme_body, style='Card.TFrame')
+        theme_head.pack(fill=X)
+        ttk.Label(theme_head, text='界面主题',
+                  style='SettingsCardTitle.TLabel').pack(side=LEFT)
+        self.theme_hint_var = StringVar(
+            value='当前：%s' % THEME_LABELS.get(self.theme_key,
+                                               self.theme_key))
+        ttk.Label(theme_head, textvariable=self.theme_hint_var,
+                  style='SettingsCardSub.TLabel').pack(side=RIGHT)
+        ttk.Label(theme_body,
+                  text='背景、窗口图标、按钮和列表会一起切换；'
+                       '选择后立即生效并记住。',
+                  style='SettingsBody.TLabel', justify=LEFT,
+                  wraplength=self.px(520)).pack(anchor='w',
+                                                pady=(self.px(3), 0))
+
+        theme_grid = tk.Frame(theme_body, bg=CARD)
+        theme_grid.pack(fill=X, pady=(self.px(12), 0))
+        for index in range(3):
+            theme_grid.columnconfigure(index, weight=1, uniform='theme')
+        self._theme_tiles: dict[str, tuple] = {}
+        self._theme_stickers: dict[str, object] = {}
+        self._theme_preview_photos: dict[str, object] = {}
+        for index, key in enumerate(THEME_ORDER):
+            tile = tk.Frame(theme_grid, bg=CARD, bd=0, highlightthickness=2,
+                            highlightbackground=BORDER, cursor='hand2')
+            tile.grid(row=0, column=index, sticky='nsew',
+                      padx=(0, self.px(8)) if index < 2 else 0)
+            preview = render_theme_preview(key, self.px(150), self.px(88))
+            if preview is not None and ImageTk is not None:
+                photo = ImageTk.PhotoImage(preview)
+                self._theme_preview_photos[key] = photo
+                preview_label = tk.Label(tile, image=photo, bg=CARD, bd=0)
+                preview_label.pack(padx=self.px(8), pady=(self.px(8), 0))
+            else:
+                preview_label = tk.Label(tile, text='主题预览', bg=CARD,
+                                         fg=TEXT_FAINT, bd=0, height=4)
+                preview_label.pack(fill=X, padx=self.px(8),
+                                   pady=(self.px(8), 0))
+            title_row = tk.Frame(tile, bg=CARD, cursor='hand2')
+            title_row.pack(fill=X, padx=self.px(10), pady=(self.px(6), 0))
+            name = tk.Label(title_row, text=THEME_LABELS[key], bg=CARD,
+                            fg=TEXT_DARK, font=(FONT, 11, 'bold'),
+                            anchor='w', cursor='hand2')
+            name.pack(side=LEFT, anchor='w')
+            sticker = None
+            if key == 'dog' and ImageTk is not None:
+                sticker_img = render_user_asset(
+                    'user_asset_04.png',
+                    (self.px(44), self.px(44)), CARD,
+                    crop=(0.26, 0.30, 0.74, 0.80))
+                if sticker_img is not None:
+                    sticker_photo = ImageTk.PhotoImage(sticker_img)
+                    self._theme_sticker_photos = getattr(
+                        self, '_theme_sticker_photos', {})
+                    self._theme_sticker_photos[key] = sticker_photo
+                    sticker = tk.Label(
+                        title_row, image=sticker_photo, bg=CARD, bd=0,
+                        highlightthickness=1,
+                        highlightbackground=CONTROL_BORDER,
+                        padx=self.px(4), pady=self.px(4), cursor='hand2')
+                    sticker.pack(side=RIGHT, padx=(self.px(6), 0))
+            self._theme_stickers[key] = sticker
+            desc = tk.Label(tile, text=THEME_DESCRIPTIONS[key], bg=CARD,
+                            fg=TEXT_FAINT, font=(FONT, 9), anchor='w',
+                            cursor='hand2')
+            desc.pack(fill=X, padx=self.px(10),
+                      pady=(0, self.px(8)))
+            self._theme_tiles[key] = (tile, name, desc, preview_label)
+            clickable = [tile, title_row, preview_label, name, desc]
+            if sticker is not None:
+                clickable.append(sticker)
+            for widget in clickable:
+                widget.bind('<Button-1>',
+                            lambda _e, k=key: self.apply_theme(k))
+        tk.Label(body,
+                 text='浅色 / 深色使用同一套版式；线条小狗使用手绘黑线、'
+                      '奶油纸底与小狗图标。',
+                 bg=BG, fg=TEXT_FAINT, font=(FONT, 9), anchor='w',
+                 justify=LEFT, wraplength=self.px(560)).pack(
+                     fill=X, pady=(self.px(14), 0))
+
+        win.bind('<Escape>', lambda _e: win.destroy())
+        win.protocol('WM_DELETE_WINDOW', lambda: self._close_settings(win))
+        win.bind('<Destroy>', self._on_settings_destroy)
+        self._refresh_settings_ui(rebuild_logo=True)
+        win.update_idletasks()
+        x = self.root.winfo_rootx() + max(
+            0, (self.root.winfo_width() - win.winfo_reqwidth()) // 2)
+        y = self.root.winfo_rooty() + max(
+            0, (self.root.winfo_height() - win.winfo_reqheight()) // 3)
+        win.geometry('+%d+%d' % (x, y))
+        try:
+            win.grab_set()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _close_settings(self, win) -> None:
+        try:
+            win.grab_release()
+        except Exception:  # noqa: BLE001
+            pass
+        win.destroy()
+
+    def _on_settings_destroy(self, event) -> None:
+        if event.widget is not getattr(self, '_settings_window', None):
+            return
+        self._settings_window = None
+        self.update_button = None
+
+    def _refresh_settings_ui(self, rebuild_logo: bool = False) -> None:
+        win = getattr(self, '_settings_window', None)
+        if win is None or not win.winfo_exists():
+            return
+        if getattr(self, '_settings_logo', None) is not None:
+            image = render_app_icon(self.theme_key, self.px(44))
+            if image is not None and ImageTk is not None:
+                try:
+                    photo = ImageTk.PhotoImage(image)
+                    self._settings_logo.configure(image=photo)
+                    self._settings_logo.image = photo
+                    self._settings_logo_photo = photo
+                except Exception:  # noqa: BLE001
+                    pass
+        for key, (tile, name, desc, preview) in getattr(
+                self, '_theme_tiles', {}).items():
+            selected = key == self.theme_key
+            try:
+                tile.configure(highlightthickness=2,
+                               highlightbackground=ACCENT if selected
+                               else BORDER)
+                name.configure(text=('✓ ' if selected else '')
+                               + THEME_LABELS[key],
+                               fg=ACCENT_DARK if selected else TEXT_DARK)
+                desc.configure(fg=TEXT_MUTED if selected else TEXT_FAINT)
+                for widget in (tile, name, desc, preview):
+                    widget.configure(bg=CARD)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            self.theme_hint_var.set('当前：%s'
+                                    % THEME_LABELS.get(self.theme_key,
+                                                       self.theme_key))
+        except Exception:  # noqa: BLE001
+            pass
+        if self.settings_update_status.get() and not self._update_busy:
+            self._set_update_controls('一键更新', 'normal')
+
+    def _set_update_controls(self, text: str, state: str) -> None:
+        button = getattr(self, 'update_button', None)
+        if button is None:
+            return
+        try:
+            if button.winfo_exists():
+                button.configure(text=text, state=state)
+        except Exception:  # noqa: BLE001
+            pass
 
     # ---------- UI ----------
     def _card(self, parent, padding: int = 20):
@@ -631,6 +1451,9 @@ class App:
             widget.bind('<Button-1>', toggle)
         variable.trace_add('write', refresh)
         refresh()
+        refreshers = getattr(self, '_check_refreshers', None)
+        if refreshers is not None:
+            refreshers.append(refresh)
         return holder
 
     def _build_check_icons(self) -> None:
@@ -641,6 +1464,7 @@ class App:
         if Image is None:
             return
         size = self.px(24)
+        child_shift = self.px(14)
         for kind in ('unchecked', 'checked', 'partial'):
             base = self._draw_check_icon(kind, size)
             buffer = io.BytesIO()
@@ -648,6 +1472,15 @@ class App:
             data = base64.b64encode(buffer.getvalue()).decode('ascii')
             self.check_icons[kind] = tk.PhotoImage(data=data)
             self.check_icons[kind + '_leaf'] = tk.PhotoImage(data=data)
+            # 展开后的子文件行：左侧留透明边距，让勾选按钮比父行再右移
+            # 一点；收起时子行不显示，父行图标不受影响。
+            child = Image.new('RGBA', (size + child_shift, size),
+                              (0, 0, 0, 0))
+            child.paste(base, (child_shift, 0))
+            buffer = io.BytesIO()
+            child.save(buffer, format='PNG')
+            data = base64.b64encode(buffer.getvalue()).decode('ascii')
+            self.check_icons['child_' + kind] = tk.PhotoImage(data=data)
 
         toggle_size = self.px(16)
         for kind in ('unchecked', 'checked'):
@@ -659,8 +1492,8 @@ class App:
 
         chevron_size = self.px(16)
         for kind in ('chevron_down', 'chevron_up'):
-            for tone, color in (('muted', (95, 107, 99, 255)),
-                                ('accent', (31, 107, 78, 255))):
+            for tone, color in (('muted', _rgb(TEXT_MUTED) + (255,)),
+                                ('accent', _rgb(ACCENT_DARK) + (255,))):
                 image = self._draw_chevron(kind, chevron_size, color)
                 buffer = io.BytesIO()
                 image.save(buffer, format='PNG')
@@ -689,8 +1522,10 @@ class App:
         return getattr(self, 'ui_icons', {}).get(key)
 
     def _draw_check_icon(self, kind: str, size: int):
-        """画一个圆角方形复选框：空、勾选、部分选中。"""
+        """画勾选框：浅/深色是圆角方框，线条小狗是爪印。"""
 
+        if getattr(self, 'theme_key', 'light') == 'dog':
+            return self._draw_paw_check(kind, size)
         scale = 4
         pixels = max(12, size) * scale
         image = Image.new('RGBA', (pixels, pixels), (0, 0, 0, 0))
@@ -699,11 +1534,12 @@ class App:
         radius = max(3, int(pixels * 0.24))
         border = max(2, int(pixels * 0.07))
         if kind == 'checked':
-            fill, outline = (31, 107, 78, 255), (20, 81, 58, 255)
+            fill, outline = _rgb(ACCENT) + (255,), _rgb(ACCENT_DARK) + (255,)
         elif kind == 'partial':
-            fill, outline = (234, 242, 237, 255), (31, 107, 78, 255)
+            fill, outline = (_rgb(ACCENT_SOFT) + (255,),
+                             _rgb(ACCENT) + (255,))
         else:
-            fill, outline = (255, 255, 255, 255), (163, 174, 165, 255)
+            fill, outline = _rgb(CARD) + (255,), _rgb(BORDER_STRONG) + (255,)
         draw.rounded_rectangle((pad, pad, pixels - pad, pixels - pad),
                                radius=radius, fill=fill, outline=outline,
                                width=border)
@@ -712,11 +1548,52 @@ class App:
             draw.line([(pixels * 0.27, pixels * 0.52),
                        (pixels * 0.44, pixels * 0.69),
                        (pixels * 0.75, pixels * 0.31)],
-                      fill=(255, 255, 255, 255), width=stroke, joint='curve')
+                      fill=_rgb(ON_ACCENT) + (255,), width=stroke,
+                      joint='curve')
         elif kind == 'partial':
             draw.line([(pixels * 0.28, pixels * 0.50),
                        (pixels * 0.72, pixels * 0.50)],
-                      fill=(31, 107, 78, 255), width=stroke)
+                      fill=_rgb(ACCENT_DARK) + (255,), width=stroke)
+        return image.resize((max(12, size), max(12, size)),
+                            Image.Resampling.LANCZOS)
+
+    def _draw_paw_check(self, kind: str, size: int):
+        """线条小狗主题的爪印勾选图标：未选是线稿，选中是暖黄实心。"""
+
+        scale = 4
+        pixels = max(12, size) * scale
+        image = Image.new('RGBA', (pixels, pixels), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        ink = _rgb(TEXT_DARK) + (255,)
+        width = max(2, int(pixels * 0.065))
+        if kind == 'checked':
+            fill = _rgb(ACCENT) + (255,)
+        elif kind == 'partial':
+            fill = _rgb(ACCENT_SOFT) + (255,)
+        else:
+            fill = _rgb(CARD) + (255,)
+        cx = pixels * 0.5
+        pad_y = pixels * 0.64
+        draw.ellipse((cx - pixels * 0.24, pad_y - pixels * 0.16,
+                      cx + pixels * 0.24, pad_y + pixels * 0.22),
+                     fill=fill, outline=ink, width=width)
+        toe = pixels * 0.13
+        for dx, dy in ((-0.29, -0.24), (0.0, -0.34), (0.29, -0.24)):
+            tx = cx + pixels * dx
+            ty = pixels * 0.40 + pixels * dy
+            draw.ellipse((tx - toe / 2, ty - toe / 2,
+                          tx + toe / 2, ty + toe / 2),
+                         fill=fill, outline=ink, width=width)
+        if kind == 'checked':
+            draw.line([(cx - pixels * 0.11, pad_y),
+                       (cx - pixels * 0.02, pad_y + pixels * 0.09),
+                       (cx + pixels * 0.13, pad_y - pixels * 0.08)],
+                      fill=ink, width=max(2, int(pixels * 0.07)),
+                      joint='curve')
+        elif kind == 'partial':
+            draw.line((cx - pixels * 0.10, pad_y + pixels * 0.02,
+                       cx + pixels * 0.10, pad_y + pixels * 0.02),
+                      fill=ink, width=max(2, int(pixels * 0.07)))
         return image.resize((max(12, size), max(12, size)),
                             Image.Resampling.LANCZOS)
 
@@ -725,6 +1602,40 @@ class App:
         if not icons:
             return None
         return icons.get(kind + ('_leaf' if leaf else ''))
+
+    def _refresh_empty_states(self) -> None:
+        """列表空态：狗主题用用户提供的并排素材，其他主题只留文字。"""
+
+        if not hasattr(self, 'board_empty'):
+            return
+        image = None
+        if self.theme_key == 'dog':
+            image = render_user_asset(
+                'user_asset_06.png',
+                (self.px(260), self.px(110)), CARD)
+        for prefix, frame, label, tree, text in (
+                ('board', self.board_empty, self.board_empty_image,
+                 self.board_tree, self.board_empty_text),
+                ('feedback', self.feedback_empty, self.feedback_empty_image,
+                 self.feedback_tree, self.feedback_empty_text)):
+            if tree.get_children(''):
+                frame.place_forget()
+                continue
+            photo = None
+            if image is not None and ImageTk is not None:
+                try:
+                    photo = ImageTk.PhotoImage(image)
+                except Exception:  # noqa: BLE001
+                    photo = None
+            if photo is not None:
+                setattr(self, '_%s_empty_photo' % prefix, photo)
+                label.configure(image=photo)
+                if not label.winfo_manager():
+                    label.pack(before=text, pady=(0, 0))
+            else:
+                label.pack_forget()
+            frame.place(relx=0.5, rely=0.55, anchor='center')
+            frame.lift()
 
     def _make_tab(self, parent, key: str, label: str):
         """安静的标签页：文字 + 2px 底线，不用整块绿色去抢主按钮。"""
@@ -741,13 +1652,7 @@ class App:
         underline.pack(fill=X, pady=(self.px(6), 0))
         return holder, button, underline
 
-    def _build_ui(self) -> None:
-        for font_name in ('TkDefaultFont', 'TkTextFont', 'TkMenuFont',
-                          'TkHeadingFont'):
-            try:
-                tkfont.nametofont(font_name).configure(family=FONT, size=10)
-            except Exception:  # noqa: BLE001
-                pass
+    def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
         try:
             style.theme_use('clam')
@@ -791,42 +1696,80 @@ class App:
 
         style.configure('Primary.TButton', font=(FONT, 11, 'bold'),
                         padding=(self.px(20), self.px(12)), background=ACCENT,
-                        foreground='#ffffff', borderwidth=0, relief='flat',
-                        focusthickness=0)
+                        foreground=ON_ACCENT, borderwidth=0, relief='flat',
+                        focusthickness=2, focuscolor=ACCENT_TEXT)
         style.map('Primary.TButton',
-                  background=[('active', ACCENT_DARK), ('disabled', '#b7cdc1')],
-                  foreground=[('disabled', '#f5f8f5')])
+                  background=[('active', ACCENT_DARK),
+                              ('disabled', ACCENT_DISABLED)],
+                  foreground=[('disabled', ON_ACCENT_DISABLED)])
         style.configure('Secondary.TButton', font=(FONT, 10),
                         padding=(self.px(12), self.px(8)), background=CARD,
                         foreground=TEXT_DARK, borderwidth=1, relief='solid',
                         bordercolor=BORDER_STRONG, lightcolor=BORDER_STRONG,
-                        darkcolor=BORDER_STRONG, focusthickness=0)
+                        darkcolor=BORDER_STRONG, focusthickness=2, focuscolor=ACCENT_TEXT)
         style.map('Secondary.TButton',
-                  background=[('active', SURFACE_ALT), ('disabled', '#f4f5f2')],
-                  foreground=[('disabled', '#a8b0a9')],
+                  background=[('active', SURFACE_ALT),
+                              ('disabled', DISABLED_BG)],
+                  foreground=[('disabled', DISABLED_FG)],
                   bordercolor=[('active', BORDER_STRONG), ('disabled', BORDER)])
+        style.configure('HeaderUpdate.TButton', font=(FONT, 9),
+                        padding=(self.px(10), self.px(5)), background=CARD,
+                        foreground=TEXT_DARK, borderwidth=1, relief='solid',
+                        bordercolor=BORDER_STRONG, lightcolor=BORDER_STRONG,
+                        darkcolor=BORDER_STRONG, focusthickness=2, focuscolor=ACCENT_TEXT)
+        style.map('HeaderUpdate.TButton',
+                  background=[('active', SURFACE_ALT), ('disabled', BG)],
+                  foreground=[('active', TEXT_DARK), ('disabled', TEXT_FAINT)])
         style.configure('Quiet.TButton', font=(FONT, 10),
                         padding=(self.px(8), self.px(4)), background=CARD,
                         foreground=TEXT_MUTED, borderwidth=0, relief='flat',
-                        focusthickness=0)
+                        focusthickness=2, focuscolor=ACCENT_TEXT)
         style.map('Quiet.TButton',
                   background=[('active', SURFACE_ALT)],
-                  foreground=[('active', TEXT_DARK), ('disabled', '#b4bcb5')])
+                  foreground=[('active', TEXT_DARK), ('disabled', DISABLED_FG)])
         style.configure('FooterQuiet.TButton', font=(FONT, 9),
                         padding=(self.px(8), self.px(4)), background=BG,
                         foreground=TEXT_MUTED, borderwidth=0, relief='flat',
-                        focusthickness=0)
+                        focusthickness=2, focuscolor=ACCENT_TEXT)
         style.map('FooterQuiet.TButton',
                   background=[('active', SURFACE_ALT)],
-                  foreground=[('active', TEXT_DARK), ('disabled', '#b4bcb5')])
+                  foreground=[('active', TEXT_DARK), ('disabled', DISABLED_FG)])
         style.configure('Fold.TButton', font=(FONT, 10, 'bold'),
                         padding=(self.px(12), self.px(8)), background=SURFACE_ALT,
                         foreground=TEXT_DARK, borderwidth=1, relief='solid',
                         bordercolor=BORDER_STRONG, lightcolor=BORDER_STRONG,
-                        darkcolor=BORDER_STRONG, focusthickness=0)
+                        darkcolor=BORDER_STRONG, focusthickness=2, focuscolor=ACCENT_TEXT)
         style.map('Fold.TButton',
-                  background=[('active', '#e5eae2'), ('disabled', '#f2f3f0')],
-                  foreground=[('disabled', '#a8b0a9')])
+                  background=[('active', HOVER_STRONG),
+                              ('disabled', DISABLED_BG)],
+                  foreground=[('disabled', DISABLED_FG)])
+        # 设置窗口里的主题卡片和普通按钮
+        style.configure('Settings.TButton', font=(FONT, 10, 'bold'),
+                        padding=(self.px(16), self.px(10)), background=ACCENT,
+                        foreground=ON_ACCENT, borderwidth=0, relief='flat',
+                        focusthickness=2, focuscolor=ACCENT_TEXT)
+        style.map('Settings.TButton',
+                  background=[('active', ACCENT_DARK),
+                              ('disabled', ACCENT_DISABLED)],
+                  foreground=[('disabled', ON_ACCENT_DISABLED)])
+        style.configure('SettingsQuiet.TButton', font=(FONT, 10),
+                        padding=(self.px(12), self.px(8)), background=CARD,
+                        foreground=TEXT_DARK, borderwidth=1, relief='solid',
+                        bordercolor=BORDER_STRONG, lightcolor=BORDER_STRONG,
+                        darkcolor=BORDER_STRONG, focusthickness=2, focuscolor=ACCENT_TEXT)
+        style.map('SettingsQuiet.TButton',
+                  background=[('active', SURFACE_ALT)],
+                  foreground=[('active', TEXT_DARK)])
+        style.configure('SettingsTitle.TLabel', background=BG,
+                        foreground=TEXT_DARK, font=(FONT, 18, 'bold'))
+        style.configure('SettingsSub.TLabel', background=BG,
+                        foreground=TEXT_MUTED, font=(FONT, 10))
+        style.configure('SettingsCardTitle.TLabel', background=CARD,
+                        foreground=TEXT_DARK, font=(FONT, 12, 'bold'))
+        style.configure('SettingsCardSub.TLabel', background=CARD,
+                        foreground=TEXT_FAINT, font=(FONT, 9))
+        style.configure('SettingsBody.TLabel', background=CARD,
+                        foreground=TEXT_MUTED, font=(FONT, 10))
 
         style.configure('TEntry', padding=(self.px(8), self.px(6)),
                         fieldbackground=CARD, foreground=TEXT_DARK,
@@ -853,18 +1796,18 @@ class App:
                         arrowcolor=TEXT_MUTED)
 
         style.configure('Accent.Horizontal.TProgressbar',
-                        thickness=self.px(8), troughcolor='#e6eae3',
+                        thickness=self.px(8), troughcolor=TRACK,
                         background=ACCENT, borderwidth=0, lightcolor=ACCENT,
                         darkcolor=ACCENT)
         style.configure('Thin.Horizontal.TProgressbar',
-                        thickness=self.px(4), troughcolor='#edf0e9',
+                        thickness=self.px(4), troughcolor=TRACK_SOFT,
                         background=ACCENT, borderwidth=0, lightcolor=ACCENT,
                         darkcolor=ACCENT)
         style.configure('Vertical.TScrollbar', arrowsize=self.px(12),
-                        width=self.px(10), background='#d7ddd5',
+                        width=self.px(10), background=SCROLL,
                         troughcolor=CARD, bordercolor=CARD, lightcolor=CARD,
                         darkcolor=CARD)
-        style.configure('Board.Treeview', rowheight=self.px(36),
+        style.configure('Board.Treeview', rowheight=self.px(40),
                         font=(FONT, 10), background=CARD,
                         fieldbackground=CARD, foreground=TEXT_DARK,
                         borderwidth=0, relief='flat')
@@ -881,35 +1824,184 @@ class App:
 
         self._build_check_icons()
 
-        outer = ttk.Frame(self.root, padding=(self.px(24), self.px(10),
+    # ---------- 主题横幅 / 图标 ----------
+    def _build_hero(self) -> None:
+        """全宽横幅：底色、线稿与小狗都由当前主题绘制。"""
+
+        self.hero_height = self.px(72)
+        self.hero = tk.Canvas(self.root, height=self.hero_height, bd=0,
+                              highlightthickness=0, bg=BG)
+        self.hero.pack(fill=X, side='top')
+        self.hero.bind('<Configure>', self._on_hero_resize)
+        self._hero_photo = None
+        self._hero_logo_photo = None
+        self._hero_size = (0, 0)
+        self._hero_render_job = None
+
+        self.settings_button = tk.Button(
+            self.hero, text='设置', command=self.open_settings,
+            takefocus=1, bg=HERO_BTN_BG, fg=HERO_BTN_FG,
+            activebackground=ACCENT_SOFT, activeforeground=HERO_BTN_FG,
+            font=(FONT, 10, 'bold'), bd=0, relief='flat',
+            padx=self.px(10), pady=self.px(4), cursor='hand2',
+            highlightthickness=1, highlightbackground=HERO_BTN_BORDER,
+            highlightcolor=ACCENT_TEXT)
+        self.settings_pill = self.settings_button
+        self.settings_button.bind('<Return>',
+                                  lambda _e: self.open_settings())
+        self.settings_pill.place(relx=1.0, x=-self.px(24),
+                                 y=self.px(8), anchor='ne')
+        self._refresh_hero_chrome()
+        self.root.after(60, lambda: self._render_hero(force=True))
+
+    def _on_hero_resize(self, _event=None) -> None:
+        if self._hero_render_job is not None:
+            try:
+                self.root.after_cancel(self._hero_render_job)
+            except Exception:  # noqa: BLE001
+                pass
+        self._hero_render_job = self.root.after(
+            80, lambda: self._render_hero(force=False))
+
+    def _render_hero(self, force: bool = False) -> None:
+        self._hero_render_job = None
+        if not hasattr(self, 'hero') or not self.hero.winfo_exists():
+            return
+        width = max(self.hero.winfo_width(), self.root.winfo_width())
+        height = self.hero.winfo_height() or self.hero_height
+        if width <= 10 or height <= 10:
+            return
+        size = (int(width), int(height))
+        if not force and size == self._hero_size:
+            return
+        self._hero_size = size
+        self.hero.delete('all')
+        if Image is None or ImageTk is None:
+            self.hero.configure(bg=BG)
+            return
+        image = render_hero(self.theme_key, size[0], size[1])
+        if image is None:
+            self.hero.configure(bg=BG)
+            return
+        try:
+            photo = ImageTk.PhotoImage(image)
+        except Exception:  # noqa: BLE001
+            return
+        self._hero_photo = photo
+        self.hero.create_image(0, 0, anchor='nw', image=photo, tags='hero')
+
+        pad = self.px(24)
+        logo_size = self.px(34)
+        logo_image = render_app_icon(self.theme_key, logo_size)
+        if logo_image is not None:
+            logo_photo = ImageTk.PhotoImage(logo_image)
+            self._hero_logo_photo = logo_photo
+            self.hero.create_image(pad, height / 2, anchor='w',
+                                   image=logo_photo, tags='hero')
+        text_x = pad + logo_size + self.px(12)
+        show_subtitle = height >= self.px(88)
+        if show_subtitle:
+            self.hero.create_text(
+                text_x, height / 2 - self.px(10), text=APP_NAME, anchor='w',
+                fill=HERO_TEXT, font=(FONT, 16, 'bold'), tags='hero')
+            self.hero.create_text(
+                text_x, height / 2 + self.px(13),
+                text='只读读取本机登录态 · 邀请码 Excel · 板书 PDF · 反馈统计',
+                anchor='w', fill=HERO_MUTED, font=(FONT, 9), tags='hero')
+        else:
+            self.hero.create_text(
+                text_x, height / 2, text=APP_NAME, anchor='w',
+                fill=HERO_TEXT, font=(FONT, 15, 'bold'), tags='hero')
+        self.hero.create_text(
+            width - self.px(24), height - self.px(7),
+            text='v%s' % APP_VERSION, anchor='se', fill=HERO_MUTED,
+            font=(MONO, 8), tags='hero')
+        self.hero.tag_lower('hero')
+
+    def _refresh_hero_chrome(self) -> None:
+        """刷新横幅上的设置按钮与窗口图标（不重画整张背景）。"""
+
+        self.settings_button.configure(
+            bg=HERO_BTN_BG, fg=HERO_BTN_FG,
+            activebackground=ACCENT_SOFT, activeforeground=HERO_BTN_FG,
+            highlightbackground=HERO_BTN_BORDER,
+            highlightcolor=ACCENT_TEXT)
+        if Image is not None and ImageTk is not None:
+            icon = render_settings_icon(self.theme_key, self.px(17),
+                                        HERO_BTN_FG)
+            if icon is not None:
+                try:
+                    photo = ImageTk.PhotoImage(icon)
+                    self._settings_icon_photo = photo
+                    self.settings_button.configure(image=photo,
+                                                   compound='left')
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def _apply_window_icon(self) -> None:
+        if Image is None or ImageTk is None:
+            return
+        photos = []
+        ico_sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64),
+                     (128, 128), (256, 256)]
+        for size in (16, 24, 32, 48, 64, 128):
+            image = render_app_icon(self.theme_key, size)
+            if image is None:
+                continue
+            try:
+                photos.append(ImageTk.PhotoImage(image))
+            except Exception:  # noqa: BLE001
+                pass
+        if photos:
+            self._window_icons = photos
+            try:
+                self.root.iconphoto(True, *photos)
+            except Exception:  # noqa: BLE001
+                pass
+        # Windows 的标题栏会锁定 iconbitmap，必须写一个当前主题的 .ico
+        # 再重新设置，iconphoto 单独调用不会替换标题栏小图标。
+        if sys.platform == 'win32':
+            try:
+                big = render_app_icon(self.theme_key, 256)
+                if big is not None:
+                    target = (Path(tempfile.gettempdir())
+                              / ('aiwenyun-theme-%s.ico' % self.theme_key))
+                    big.save(target, format='ICO', sizes=ico_sizes)
+                    self._theme_icon_path = str(target)
+                    self.root.iconbitmap(str(target))
+            except Exception:  # noqa: BLE001
+                pass
+        win = getattr(self, '_settings_window', None)
+        if win is not None and win.winfo_exists():
+            try:
+                win.iconphoto(True, *getattr(self, '_window_icons', []))
+                if sys.platform == 'win32' and getattr(
+                        self, '_theme_icon_path', ''):
+                    win.iconbitmap(self._theme_icon_path)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _build_ui(self) -> None:
+        for font_name in ('TkDefaultFont', 'TkTextFont', 'TkMenuFont',
+                          'TkHeadingFont'):
+            try:
+                tkfont.nametofont(font_name).configure(family=FONT, size=10)
+            except Exception:  # noqa: BLE001
+                pass
+        self._configure_styles()
+
+        self._build_hero()
+        outer = ttk.Frame(self.root, padding=(self.px(24), self.px(6),
                                               self.px(24), self.px(10)))
         outer.pack(fill=BOTH, expand=True)
 
-        # ---------- 头部 ----------
-        # 窗口高度是有限的，头部压成一行：应用名 + 只读说明，下面直接
-        # 接标签页。以前 20pt 标题加两行说明，光页头就吃掉一百七十像素。
-        header = ttk.Frame(outer)
-        header.pack(fill=X)
-        ttk.Label(header, text=APP_NAME, font=(FONT, 16, 'bold'),
-                  foreground=TEXT_DARK).pack(side=LEFT)
-        ttk.Label(header,
-                  text='只读读取本机登录态 · 邀请码 Excel · 板书 PDF · 作业成绩 CSV',
-                  style='HeaderMuted.TLabel').pack(
-                      side=LEFT, anchor='s', padx=(self.px(14), 0),
-                      pady=(0, self.px(3)))
-        ttk.Label(header, text='v%s' % APP_VERSION,
-                  style='Meta.TLabel').pack(side=RIGHT, anchor='s',
-                                            pady=(0, self.px(3)))
-
-        tk.Frame(outer, bg=BORDER, height=1).pack(fill=X, pady=(self.px(8), 0))
-
         # ---------- 功能切换 ----------
         tabbar = ttk.Frame(outer)
-        tabbar.pack(fill=X, pady=(self.px(4), 0))
+        tabbar.pack(fill=X, pady=(self.px(2), 0))
         self.tab_buttons: dict[str, tuple[tk.Button, tk.Frame]] = {}
         for key, label in (('invite', '邀请码导出'),
                            ('board', '板书导出'),
-                           ('homework', '作业导出')):
+                           ('feedback', '反馈文件导出')):
             holder, button, underline = self._make_tab(tabbar, key, label)
             holder.pack(side=LEFT, padx=(0, self.px(24)))
             self.tab_buttons[key] = (button, underline)
@@ -1035,7 +2127,7 @@ class App:
         ttk.Label(board_head, text='板书导出',
                   style='Section.TLabel').pack(side=LEFT)
         ttk.Label(board_head,
-                  text='按班级分组勾选 · 只导出所选 · PDF 按班级分文件夹',
+                  text='按学期+班级分组 · 只导出所选 · PDF 按学期+班级分文件夹',
                   style='Muted.TLabel').pack(side=LEFT, anchor='s',
                                              padx=(self.px(12), 0),
                                              pady=(0, self.px(3)))
@@ -1053,7 +2145,7 @@ class App:
             command=lambda: self._start_client_scan(manual=True))
         self.rescan_button.pack(side=LEFT)
         self.use_account_link = tk.Label(
-            self.login_row, text='改用账号密码登录', bg=CARD, fg=ACCENT,
+            self.login_row, text='改用账号密码登录', bg=CARD, fg=LINK,
             activeforeground=ACCENT_DARK, font=(FONT, 9, 'underline'),
             cursor='hand2')
         self.use_account_link.bind(
@@ -1163,11 +2255,16 @@ class App:
                                             state='disabled')
         self.select_all_button.pack(side=RIGHT, padx=(8, 0))
 
-        # 班级做成横排按钮（和作业页一致），点一下换班
+        # 班级做成横排按钮：按钮上带学期（26秋7MAA12），窗口放不下时
+        # 多余的收进「更多」菜单，不再固定只显示 8 个。
         self.board_class_bar = ttk.Frame(board, style='Card.TFrame')
         self.board_class_bar.grid(row=4, column=0, sticky='ew',
                                   pady=(0, self.px(6)))
+        self.board_class_bar.bind('<Configure>',
+                                  self._on_board_class_bar_resize)
         self.board_class_buttons: dict[str, tk.Button] = {}
+        self.board_more_button: tk.Button | None = None
+        self._board_hidden_count = 0
 
         self.tree_wrap = tk.Frame(board, bg=CARD, bd=0,
                                   highlightbackground=BORDER,
@@ -1203,6 +2300,17 @@ class App:
         board_scroll.pack(side=RIGHT, fill=Y)
         self.board_tree.bind('<Button-1>', self._on_board_click)
 
+        self.board_empty = tk.Frame(self.tree_wrap, bg=CARD)
+        self.board_empty_image = tk.Label(self.board_empty, bg=CARD, bd=0)
+        self.board_empty_text = tk.Label(
+            self.board_empty,
+            text='还没有课堂 · 选好时间段后点「列出板书」',
+            bg=CARD, fg=TEXT_FAINT, font=(FONT, 10),
+            wraplength=self.px(360), justify='center')
+        self.board_empty_text.pack(pady=(self.px(6), 0))
+        self.board_empty.place(relx=0.5, rely=0.55, anchor='center')
+        self.board_empty.lift()
+
         board_row = ttk.Frame(board, style='Card.TFrame')
         board_row.grid(row=6, column=0, sticky='ew', pady=(self.px(10), 0))
         self.selection_badge = tk.Label(
@@ -1226,158 +2334,191 @@ class App:
         # 窗口被拖矮时把日志收起来，给列表腾高度
         board.bind('<Configure>', self._fit_board_layout)
 
-        # ---------- 作业视图 ----------
-        homework_outer, home = self._card(content, padding=self.px(14))
-        homework_outer.grid(row=0, column=0, sticky='nsew')
-        homework_outer.grid_remove()
-        self.homework_view = homework_outer
+        # ---------- 反馈文件导出视图 ----------
+        feedback_outer, feedback = self._card(content, padding=self.px(14))
+        feedback_outer.grid(row=0, column=0, sticky='nsew')
+        feedback_outer.grid_remove()
+        self.feedback_view = feedback_outer
+        feedback.columnconfigure(0, weight=1)
 
-        home_head = ttk.Frame(home, style='Card.TFrame')
-        home_head.grid(row=0, column=0, sticky='ew')
-        ttk.Label(home_head, text='作业导出',
+        feedback_head = ttk.Frame(feedback, style='Card.TFrame')
+        feedback_head.grid(row=0, column=0, sticky='ew')
+        ttk.Label(feedback_head, text='反馈文件导出',
                   style='Section.TLabel').pack(side=LEFT)
-        ttk.Label(home_head,
-                  text='按班级分组 · 一个作业框一个 CSV（与爱问云统计导出同格式）',
+        ttk.Label(feedback_head,
+                  text='展开课次选文件 · 按班级和课次归档',
                   style='Muted.TLabel').pack(side=LEFT, anchor='s',
                                              padx=(self.px(12), 0),
                                              pady=(0, self.px(3)))
-        self.homework_badge = tk.Label(
-            home_head, text='○ 等待登录态', bg=CARD, fg=TEXT_MUTED,
+        self.feedback_badge = tk.Label(
+            feedback_head, text='○ 等待登录态', bg=CARD, fg=TEXT_MUTED,
             font=(FONT, 10))
-        self.homework_badge.pack(side=RIGHT)
+        self.feedback_badge.pack(side=RIGHT)
 
-        home_toolbar = tk.Frame(home, bg=SURFACE, bd=0,
-                                highlightbackground=BORDER,
-                                highlightthickness=1)
-        home_toolbar.grid(row=1, column=0, sticky='ew', pady=(self.px(14), 0))
-        home_body = ttk.Frame(home_toolbar, style='Surface.TFrame',
-                              padding=(self.px(16), self.px(10)))
-        home_body.pack(fill=X)
+        feedback_toolbar = tk.Frame(feedback, bg=SURFACE, bd=0,
+                                    highlightbackground=BORDER,
+                                    highlightthickness=1)
+        feedback_toolbar.grid(row=1, column=0, sticky='ew',
+                              pady=(self.px(14), 0))
+        feedback_body = ttk.Frame(feedback_toolbar, style='Surface.TFrame',
+                                  padding=(self.px(16), self.px(10)))
+        feedback_body.pack(fill=X)
 
-        home_range_row = ttk.Frame(home_body, style='Surface.TFrame')
-        home_range_row.pack(fill=X)
-        ttk.Label(home_range_row, text='时间段',
+        feedback_range_row = ttk.Frame(feedback_body, style='Surface.TFrame')
+        feedback_range_row.pack(fill=X)
+        ttk.Label(feedback_range_row, text='时间段',
                   style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.homework_range_box = ttk.Combobox(
-            home_range_row, textvariable=self.homework_range,
+        self.feedback_range_box = ttk.Combobox(
+            feedback_range_row, textvariable=self.feedback_range,
             values=list(RANGE_PRESETS), state='readonly', width=12)
-        self.homework_range_box.pack(side=LEFT,
+        self.feedback_range_box.pack(side=LEFT,
                                      padx=(self.px(8), self.px(18)))
-        self.homework_range_box.bind(
-            '<<ComboboxSelected>>', lambda _e: self._auto_list_homeworks())
-        tk.Frame(home_range_row, bg=BORDER_STRONG, width=1).pack(
+        self.feedback_range_box.bind(
+            '<<ComboboxSelected>>', lambda _e: self._auto_list_feedbacks())
+        tk.Frame(feedback_range_row, bg=BORDER_STRONG, width=1).pack(
             side=LEFT, fill=Y, pady=self.px(4), padx=(0, self.px(18)))
-        ttk.Label(home_range_row, text='自定义日期',
+        ttk.Label(feedback_range_row, text='自定义日期',
                   style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.homework_from_entry = ttk.Entry(
-            home_range_row, textvariable=self.homework_from, width=11)
-        self.homework_from_entry.pack(side=LEFT, padx=(self.px(8), self.px(6)))
-        ttk.Label(home_range_row, text='至',
+        self.feedback_from_entry = ttk.Entry(
+            feedback_range_row, textvariable=self.feedback_from, width=11)
+        self.feedback_from_entry.pack(side=LEFT, padx=(self.px(8), self.px(6)))
+        ttk.Label(feedback_range_row, text='至',
                   style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.homework_to_entry = ttk.Entry(
-            home_range_row, textvariable=self.homework_to, width=11)
-        self.homework_to_entry.pack(side=LEFT, padx=(self.px(6), 0))
-        self.homework_from_entry.bind(
-            '<Return>', lambda _e: self._auto_list_homeworks())
-        self.homework_to_entry.bind(
-            '<Return>', lambda _e: self._auto_list_homeworks())
-        self.homework_list_button = ttk.Button(
-            home_range_row, text='列出作业', style='Secondary.TButton',
-            command=self.on_list_homeworks, state='disabled')
-        self.homework_list_button.pack(side=RIGHT, padx=(self.px(16), 0))
+        self.feedback_to_entry = ttk.Entry(
+            feedback_range_row, textvariable=self.feedback_to, width=11)
+        self.feedback_to_entry.pack(side=LEFT, padx=(self.px(6), 0))
+        self.feedback_from_entry.bind(
+            '<Return>', lambda _e: self._auto_list_feedbacks())
+        self.feedback_to_entry.bind(
+            '<Return>', lambda _e: self._auto_list_feedbacks())
+        self.feedback_list_button = ttk.Button(
+            feedback_range_row, text='列出反馈', style='Secondary.TButton',
+            command=self.on_list_feedbacks, state='disabled')
+        self.feedback_list_button.pack(side=RIGHT, padx=(self.px(16), 0))
 
-        self.homework_hint = ttk.Label(
-            home_body, textvariable=self.client_hint,
+        feedback_filter_row = ttk.Frame(feedback_body, style='Surface.TFrame')
+        feedback_filter_row.pack(fill=X, pady=(self.px(8), 0))
+        ttk.Label(feedback_filter_row, text='班级',
+                  style='SurfaceMuted.TLabel').pack(side=LEFT)
+        # 反馈页也把班级做成横排按钮：每个班一眼能点，不再只藏在下拉框里。
+        self.feedback_class_bar = ttk.Frame(
+            feedback_filter_row, style='Surface.TFrame')
+        self.feedback_class_bar.pack(
+            side=LEFT, fill=X, expand=True, padx=(self.px(8), 0))
+        self.feedback_class_bar.bind(
+            '<Configure>', self._on_feedback_class_bar_resize)
+        self.feedback_class_buttons = {}
+        self.feedback_more_button = None
+        self._feedback_hidden_count = 0
+        self.feedback_class_hint = ttk.Label(
+            feedback_filter_row, text='全部班级 · 按时间降序',
+            style='SurfaceFaint.TLabel')
+        self.feedback_class_hint.pack(side=RIGHT, padx=(self.px(12), 0))
+
+        self.feedback_hint = ttk.Label(
+            feedback_body, textvariable=self.client_hint,
             style='SurfaceHint.TLabel', justify=LEFT,
             wraplength=self.px(520))
-        self.homework_hint.pack(fill=X, pady=(self.px(6), 0))
+        self.feedback_hint.pack(fill=X, pady=(self.px(6), 0))
 
-        # 进度用独立弹窗，不再占卡片里的位置
-        self.homework_progress = ProgressPanel(home, self.on_cancel,
+        # 进度用独立弹窗，不占列表高度
+        self.feedback_progress = ProgressPanel(feedback, self.on_cancel,
                                                compact=False)
 
-        home_list_head = ttk.Frame(home, style='Card.TFrame')
-        home_list_head.grid(row=3, column=0, sticky='ew',
-                            pady=(self.px(12), self.px(6)))
-        ttk.Label(home_list_head, text='作业框',
+        feedback_list_head = ttk.Frame(feedback, style='Card.TFrame')
+        feedback_list_head.grid(row=2, column=0, sticky='ew',
+                                pady=(self.px(12), self.px(6)))
+        ttk.Label(feedback_list_head, text='反馈文件',
                   style='SectionSmall.TLabel').pack(side=LEFT)
-        ttk.Label(home_list_head, textvariable=self.homework_meta,
+        ttk.Label(feedback_list_head, textvariable=self.feedback_meta,
                   style='Faint.TLabel').pack(side=LEFT, padx=(self.px(12), 0))
-        self.homework_clear_button = ttk.Button(
-            home_list_head, text='清空', style='Quiet.TButton',
-            command=self.on_clear_homeworks, state='disabled')
-        self.homework_clear_button.pack(side=RIGHT, padx=(self.px(8), 0))
-        self.homework_select_button = ttk.Button(
-            home_list_head, text='全选', style='Quiet.TButton',
-            command=self.on_select_all_homeworks, state='disabled')
-        self.homework_select_button.pack(side=RIGHT, padx=(self.px(8), 0))
+        self.feedback_clear_button = ttk.Button(
+            feedback_list_head, text='清空', style='Secondary.TButton',
+            command=self.on_clear_feedbacks, state='disabled')
+        self.feedback_clear_button.pack(side=RIGHT, padx=(self.px(8), 0))
+        self.feedback_select_button = ttk.Button(
+            feedback_list_head, text='全选', style='Secondary.TButton',
+            command=self.on_select_all_feedbacks, state='disabled')
+        self.feedback_select_button.pack(side=RIGHT, padx=(self.px(8), 0))
 
-        # 班级做成横排按钮：竖着的分组行不好找班，横着最多摆 8 个
-        self.homework_class_bar = ttk.Frame(home, style='Card.TFrame')
-        self.homework_class_bar.grid(row=4, column=0, sticky='ew',
-                                     pady=(0, self.px(6)))
-        self.homework_class_buttons: dict[str, tk.Button] = {}
-
-        home.columnconfigure(0, weight=1)
-        home.rowconfigure(5, weight=1)
-        self.homework_tree_wrap = tk.Frame(home, bg=CARD, bd=0,
+        feedback.rowconfigure(3, weight=1)
+        self.feedback_tree_wrap = tk.Frame(feedback, bg=CARD, bd=0,
                                            highlightbackground=BORDER,
                                            highlightthickness=1)
-        self.homework_tree_wrap.grid(row=5, column=0, sticky='nsew')
-        self.homework_tree = ttk.Treeview(
-            self.homework_tree_wrap, columns=('title', 'progress', 'date'),
-            show='tree headings', height=8, selectmode='none',
+        self.feedback_tree_wrap.grid(row=3, column=0, sticky='nsew')
+        self.feedback_tree = ttk.Treeview(
+            self.feedback_tree_wrap,
+            columns=('class', 'title', 'date'),
+            show='tree headings', height=9, selectmode='none',
             style='Board.Treeview')
-        self.homework_tree.heading('#0', text='选择', anchor='center')
-        self.homework_tree.heading('title', text='作业框', anchor='w')
-        self.homework_tree.heading('progress', text='提交 / 批改',
-                                   anchor='center')
-        self.homework_tree.heading('date', text='布置时间', anchor='center')
-        self.homework_tree.column('#0', width=self.px(72),
-                                  minwidth=self.px(72), anchor='center',
+        self.feedback_tree.heading('#0', text='选择', anchor='center')
+        self.feedback_tree.heading('class', text='班级', anchor='w')
+        self.feedback_tree.heading('title', text='名称', anchor='w')
+        self.feedback_tree.heading('date', text='时间', anchor='center')
+        self.feedback_tree.column('#0', width=self.px(84),
+                                  minwidth=self.px(84), anchor='center',
                                   stretch=False)
-        self.homework_tree.column('title', width=self.px(700),
-                                  minwidth=self.px(380), anchor='w')
-        self.homework_tree.column('progress', width=self.px(140),
-                                  minwidth=self.px(120), anchor='center',
-                                  stretch=False)
-        self.homework_tree.column('date', width=self.px(160),
+        self.feedback_tree.column('class', width=self.px(230),
+                                  minwidth=self.px(150), anchor='w')
+        self.feedback_tree.column('title', width=self.px(500),
+                                  minwidth=self.px(300), anchor='w')
+        self.feedback_tree.column('date', width=self.px(150),
                                   minwidth=self.px(132), anchor='center',
                                   stretch=False)
-        for tag, bg, fg in (('unchecked', CARD, TEXT_DARK),
-                            ('checked', CHECKED_BG, TEXT_DARK)):
-            self.homework_tree.tag_configure(tag, background=bg,
-                                             foreground=fg,
-                                             font=(FONT, 10))
-        homework_scroll = ttk.Scrollbar(self.homework_tree_wrap,
+        for tag, bg, fg, font_size in (
+                ('unchecked', CARD, TEXT_DARK, 10),
+                ('checked', CHECKED_BG, TEXT_DARK, 10),
+                ('child_unchecked', SURFACE, TEXT_BODY, 9),
+                ('child_checked', SURFACE_ALT, TEXT_BODY, 9)):
+            self.feedback_tree.tag_configure(
+                tag, background=bg, foreground=fg, font=(FONT, font_size))
+        feedback_scroll = ttk.Scrollbar(self.feedback_tree_wrap,
                                         orient='vertical',
-                                        command=self.homework_tree.yview,
+                                        command=self.feedback_tree.yview,
                                         style='Vertical.TScrollbar')
-        self.homework_tree.configure(yscrollcommand=homework_scroll.set)
-        self.homework_tree.pack(side=LEFT, fill=BOTH, expand=True)
-        homework_scroll.pack(side=RIGHT, fill=Y)
-        self.homework_tree.bind('<Button-1>', self._on_homework_click)
+        self.feedback_tree.configure(yscrollcommand=feedback_scroll.set)
+        self.feedback_tree.pack(side=LEFT, fill=BOTH, expand=True)
+        feedback_scroll.pack(side=RIGHT, fill=Y)
+        self.feedback_tree.bind('<Button-1>', self._on_feedback_click)
+        self.feedback_tree.bind('<<TreeviewOpen>>',
+                                lambda _e: self._remember_feedback_open(
+                                    self.feedback_tree.focus()))
+        self.feedback_tree.bind('<<TreeviewClose>>',
+                                lambda _e: self._remember_feedback_open(
+                                    self.feedback_tree.focus()))
 
-        home_row = ttk.Frame(home, style='Card.TFrame')
-        home_row.grid(row=6, column=0, sticky='ew', pady=(self.px(10), 0))
-        self.homework_badge_count = tk.Label(
-            home_row, text='已选 0 个', bg=CARD, fg=TEXT_MUTED,
+        self.feedback_empty = tk.Frame(self.feedback_tree_wrap, bg=CARD)
+        self.feedback_empty_image = tk.Label(self.feedback_empty, bg=CARD,
+                                             bd=0)
+        self.feedback_empty_text = tk.Label(
+            self.feedback_empty,
+            text='还没有反馈文件 · 连接登录态后点「列出反馈」',
+            bg=CARD, fg=TEXT_FAINT, font=(FONT, 10),
+            wraplength=self.px(380), justify='center')
+        self.feedback_empty_text.pack(pady=(self.px(6), 0))
+        self.feedback_empty.place(relx=0.5, rely=0.55, anchor='center')
+        self.feedback_empty.lift()
+
+        feedback_row = ttk.Frame(feedback, style='Card.TFrame')
+        feedback_row.grid(row=4, column=0, sticky='ew', pady=(self.px(10), 0))
+        self.feedback_badge_count = tk.Label(
+            feedback_row, text='已选 0 项', bg=CARD, fg=TEXT_MUTED,
             font=(FONT, 10))
-        self.homework_badge_count.pack(side=LEFT)
-        ttk.Label(home_row, text='点整行勾选 · 换班级不影响已勾选 · '
-                                 '直接输出 CSV，不套文件夹',
+        self.feedback_badge_count.pack(side=LEFT)
+        ttk.Label(feedback_row, text='点选择列勾选 · 点名称展开 · '
+                                     '每个文件可单独选择',
                   style='Faint.TLabel').pack(side=LEFT, padx=(12, 0))
-        self.homework_export_button = ttk.Button(
-            home_row, text='导出所选作业', style='Primary.TButton',
-            command=self.on_export_homeworks, state='disabled')
-        self.homework_export_button.pack(side=RIGHT)
+        self.feedback_export_button = ttk.Button(
+            feedback_row, text='导出所选反馈', style='Primary.TButton',
+            command=self.on_export_feedbacks, state='disabled')
+        self.feedback_export_button.pack(side=RIGHT)
 
-        self.homework_log = LogPanel(
-            home, title='作业运行日志',
-            subtitle='清单、成绩与导出诊断', height=5,
+        self.feedback_log = LogPanel(
+            feedback, title='反馈运行日志',
+            subtitle='课堂权限、作业成绩与导出诊断', height=5,
             collapsible=True, expanded=False, px=self.px,
-            on_toggle=self.on_toggle_homework_log)
-        self.homework_log.frame.grid(row=7, column=0, sticky='ew',
+            on_toggle=self.on_toggle_feedback_log)
+        self.feedback_log.frame.grid(row=5, column=0, sticky='ew',
                                      pady=(self.px(10), 0))
 
         # ---------- 状态 / 页脚 ----------
@@ -1398,21 +2539,21 @@ class App:
                                       command=self.open_last,
                                       state='disabled')
         self.open_button.pack(side=LEFT, padx=(self.px(4), 0))
-        ttk.Label(footer, text='保存位置：桌面「爱问云邀请码」'
-                               '·「爱问云板书导出」·「爱问云作业统计」',
+        ttk.Label(footer, text='保存位置：导出时选择 · 默认「爱问云邀请码」/'
+                               '「爱问云板书导出」/「爱问云反馈文件」',
                   style='Footer.TLabel').pack(side=RIGHT)
 
         self._base_title = '%s %s' % (APP_NAME, APP_VERSION)
-        self.export_button.focus_set()
         self._switch_view('invite')
         self.append_log('就绪：正在检测本机已登录的爱问云；识别到后可直接列出板书，'
                         '不需要账号密码。未匹配到班级的条目→杂项/未分类。',
-                        target='invite')
+                        target='board')
+        self._refresh_empty_states()
 
     def _switch_view(self, view: str) -> None:
-        """在三个功能页之间切换。"""
+        """在邀请码/板书/反馈三个功能页之间切换。"""
 
-        if view not in ('invite', 'board', 'homework'):
+        if view not in ('invite', 'board', 'feedback'):
             return
         self.view = view
         for key, (button, underline) in self.tab_buttons.items():
@@ -1423,13 +2564,13 @@ class App:
             underline.configure(bg=ACCENT if active else BG)
         for key, widget in (('invite', self.invite_view),
                             ('board', self.board_view),
-                            ('homework', self.homework_view)):
+                            ('feedback', self.feedback_view)):
             if key == view:
                 widget.grid(row=0, column=0, sticky='nsew')
             else:
                 widget.grid_remove()
 
-    # ---------- 导出流程 ----------
+    # ---------- 邀请码导出流程 ----------
     def on_export(self) -> None:
         if self.busy.get():
             return
@@ -1449,7 +2590,6 @@ class App:
         self._busy_kind = 'invite'
         self.invite_running = True
         self.board_progress.hide()
-        self.invite_progress.show()
         self.invite_progress.begin(
             '正在导出邀请码', '正在读取本机登录态…',
             indeterminate=True, hint='导出期间可以继续切到板书页')
@@ -1467,8 +2607,6 @@ class App:
             write_csv=self.write_csv.get(),
             write_json=self.write_json.get(),
             allow_restart=allow_restart,
-            # 仅当板书区确实用了账号登录会话时，邀请码导出才复用它；
-            # 客户端免密码模式下仍走原来的只读内存扫描。
             preferred_token=(self.login_result.token
                              if self.board_origin == 'account'
                              and self.login_result else ''),
@@ -1491,6 +2629,13 @@ class App:
             self._post('error', str(error))
         except Exception as error:
             self._post('error', '%s: %s' % (type(error).__name__, error))
+
+    def _renew_token(self) -> str:
+        """邀请码导出期间 token 失效：用界面账号重新登录取新会话。"""
+
+        if not self._relogin():
+            raise RuntimeError('界面账号重新登录失败')
+        return self.login_result.token
 
     # ---------- 登录态：优先本机已登录客户端 ----------
     def _has_board_auth(self) -> bool:
@@ -1633,13 +2778,13 @@ class App:
         self.board_list_button.configure(
             state='normal' if (has_auth and not busy) else 'disabled')
         self._refresh_board_state()
-        self._refresh_homework_badge(has_auth, client_mode)
-        self._refresh_homework_state()
+        self._refresh_feedback_badge(has_auth, client_mode)
+        self._refresh_feedback_state()
 
-    def _refresh_homework_badge(self, has_auth: bool, client_mode: bool) -> None:
-        """作业页右上角的登录态徽标（和板书页保持同一套说法）。"""
+    def _refresh_feedback_badge(self, has_auth: bool, client_mode: bool) -> None:
+        """反馈页右上角的登录态徽标（和板书页保持同一套说法）。"""
 
-        badge = getattr(self, 'homework_badge', None)
+        badge = getattr(self, 'feedback_badge', None)
         if badge is None:
             return
         if self._client_scanning and not has_auth:
@@ -1677,7 +2822,6 @@ class App:
             return
         self._busy_kind = 'login'
         self.set_busy(True)
-        self.board_progress.show()
         self.board_progress.begin(
             '正在登录爱问云', '账号密码只在本进程内存中使用，不写日志、不落盘…',
             indeterminate=True, cancellable=False,
@@ -1750,13 +2894,6 @@ class App:
             return False
         return self._relogin()
 
-    def _renew_token(self) -> str:
-        """邀请码导出期间 token 失效：用界面账号重新登录取新会话。"""
-
-        if not self._relogin():
-            raise RuntimeError('界面账号重新登录失败')
-        return self.login_result.token
-
     # ---------- 板书导出（先列出勾选，再导出所选） ----------
     def _auto_list_boards(self) -> None:
         """时间段变更后的自动刷新：已有登录态即重新列出；忙碌则记下待刷新。"""
@@ -1769,11 +2906,11 @@ class App:
         self.on_list_boards()
 
     def _auto_list_if_empty(self, force: bool = False) -> None:
-        """连上登录态后自动列一次板书，随后接着列一次作业框。
+        """连上登录态后自动列一次板书，随后接着列一次反馈清单。
 
         首次连上、清单还是空的，就直接把时间段内的板书拉出来，用户不用
         先点「列出板书」；手动重新检测（``force``）则强制刷新一次。
-        两个清单共用同一个忙碌标记，所以作业框等板书列完再开始。
+        两个清单共用同一个忙碌标记，所以反馈清单等板书列完再开始。
         """
 
         if not self._has_board_auth():
@@ -1782,11 +2919,11 @@ class App:
             self.root.after(400, lambda: self._auto_list_if_empty(force))
             return
         if not self.board_records or force:
-            self._pending_homework_auto = True
+            self._pending_feedback_auto = True
             self.on_list_boards()
             return
-        if not self.homework_items or force:
-            self.on_list_homeworks()
+        if not self.feedback_items or force:
+            self.on_list_feedbacks()
 
     def on_list_boards(self) -> None:
         """按所选时间段列出板书清单（不下载板书，仅取课堂列表）。"""
@@ -1810,7 +2947,6 @@ class App:
         self.cancel_event = threading.Event()
         self._busy_kind = 'board'
         self.set_busy(True)
-        self.board_progress.show()
         self.board_progress.begin(
             '正在列出板书', '正在读取课堂与班级信息…',
             indeterminate=True, hint='只读清单，不下载板书页')
@@ -1837,6 +2973,7 @@ class App:
                 return
             session = self._board_session()
             class_names: list[str] = []
+            self._post('progress_detail', '正在读取爱问云班级列表…')
             self._thread_log('正在读取爱问云班级列表…')
             try:
                 class_names = fetch_class_names(session)
@@ -1851,16 +2988,29 @@ class App:
                 # 班级列表只是展示分组用；读取失败不影响继续列出板书。
                 self._thread_log('班级列表读取失败（%s），将按课堂名识别班级。'
                                  % error)
+            self._post('progress_detail', '正在读取该时间段的课堂记录…')
             try:
-                records = fetch_records(session, from_ms, to_ms)
+                records = fetch_records(session, from_ms, to_ms,
+                                        cancel_event=self.cancel_event)
                 if check_cancel():
                     return
                 # 用 liveInfo 的 groups 把课堂精确映射到官方班级
                 # （26秋7MA+31 -> 2026027MA+31β1/β3），再合并 α/β 变体。
+                self._post('progress_detail',
+                           '已读取 %d 节课，正在对应官方班级…' % len(records))
                 self._thread_log('正在读取课堂对应的班级…')
+
+                def mapping_progress(done, total):
+                    self._post(
+                        'progress_detail',
+                        '已读取 %d 节课，正在对应官方班级 %d / %d…'
+                        % (len(records), done, total))
+
                 try:
-                    enrich_record_groups(session, records)
-                except TokenExpired:
+                    enrich_record_groups(session, records,
+                                         on_progress=mapping_progress,
+                                         cancel_event=self.cancel_event)
+                except (BatchCancelled, TokenExpired):
                     raise
                 except Exception as error:  # noqa: BLE001
                     self._thread_log('班级映射读取失败（%s），将按课堂名匹配。'
@@ -1894,7 +3044,7 @@ class App:
             return
 
     def _boards_listed(self, payload) -> None:
-        """列出完成：按班级分组，班级做成横排按钮，列表只显示当前班级。"""
+        """列出完成：按「学期+班级」分组，班级做成横排按钮，列表只显示当前班级。"""
 
         if isinstance(payload, dict):
             records = list(payload.get('records') or [])
@@ -1903,19 +3053,29 @@ class App:
             records = list(payload or [])
             class_names = []
 
-        self.board_records = records
         self.board_class_names = [str(name).strip() for name in class_names
                                   if str(name).strip()]
+        original_count = len(records)
+        if self.board_class_names:
+            records = [record for record in records
+                       if record_matches_class_list(
+                           record, self.board_class_names)]
+        hidden_count = original_count - len(records)
+        self.board_records = records
         self.board_group_of = {}
         self.board_tree.delete(*self.board_tree.get_children())
 
         groups = group_board_records(records, self.board_class_names)
-        ordered_names = ordered_group_names(groups, records)
+        self.board_group_labels = group_display_names(groups, records)
+        ordered_names = ordered_group_names(
+            groups, records, labels=self.board_group_labels)
+        self.board_display_order = list(ordered_names)
         self.board_groups = {name: [records[index] for index in groups[name]]
                              for name in ordered_names}
         for name, rows in self.board_groups.items():
+            label = self.board_group_labels.get(name, name)
             for record in rows:
-                self.board_group_of[id(record)] = name
+                self.board_group_of[id(record)] = label
         self.board_checked = {self._board_key(record): False
                               for record in records}
         self.board_active_class = (ordered_names[0] if ordered_names else '')
@@ -1925,12 +3085,19 @@ class App:
         official_count = len(ordered_names) - (
             1 if UNCLASSIFIED_GROUP in groups else 0)
         misc_count = len(groups.get(UNCLASSIFIED_GROUP, []))
+        terms = {term_label(self.board_group_labels.get(name, name))
+                 for name in ordered_names if name != UNCLASSIFIED_GROUP}
+        term_count = len([term for term in terms if term])
         if official_count:
             meta = '共 %d 节课 · %d 个班级' % (len(records), official_count)
+            if term_count > 1:
+                meta += ' · %d 个学期' % term_count
         else:
             meta = '共 %d 节课' % len(records)
         if misc_count:
             meta += ' · 杂项 %d 节' % misc_count
+        if hidden_count:
+            meta += ' · 已隐藏 %d 节无匹配班级' % hidden_count
         meta += ' · 最新在上'
         self.board_meta.set(meta if records else '该时段没有课堂')
         self._refresh_board_state()
@@ -1944,8 +3111,11 @@ class App:
             self.append_log('该时段没有课堂；请换个时间段（如「最近30天」）再试。',
                             target='board')
         else:
-            self.client_hint.set('已自动列出 %d 节课；点上面的班级按钮换班，'
-                                 '勾选后点「导出所选板书」。' % len(records))
+            first_label = self.board_group_labels.get(
+                self.board_active_class, self.board_active_class)
+            self.client_hint.set(
+                '已自动列出 %d 节课；点班级按钮（如「%s」）换班，'
+                '勾选后点「导出所选板书」。' % (len(records), first_label))
             if official_count:
                 self.status.set(
                     '共 %d 节课（%d 个班级%s），最新在上；勾选后点「导出所选板书」'
@@ -1964,8 +3134,8 @@ class App:
                 source = '课堂名兜底识别'
             if official_count:
                 self.append_log(
-                    '共 %d 节课可勾选；按%s分组：%d 个班级'
-                    '（α/β1/β2/β3 已合并）%s；列表最新在上。'
+                    '共 %d 节课可勾选；按%s分组并加上学期：%d 个班级'
+                    '（α/β1/β2/β3 已合并，如「26秋7MA+31」）%s；列表最新在上。'
                     % (len(records), source, official_count,
                        '，杂项/未分类 %d 节' % misc_count if misc_count else ''),
                     target='board')
@@ -1976,38 +3146,185 @@ class App:
         if self._pending_list:      # 列出期间用户又切换了时间段
             self._pending_list = False
             self.on_list_boards()
-        elif getattr(self, '_pending_homework_auto', False):
-            # 连上登录态后的自动流程：板书列完接着列作业框
-            self._pending_homework_auto = False
-            self.root.after(120, self.on_list_homeworks)
+        elif getattr(self, '_pending_feedback_auto', False):
+            # 连上登录态后的自动流程：板书列完接着列反馈清单
+            self._pending_feedback_auto = False
+            self.root.after(120, self.on_list_feedbacks)
 
     def _board_key(self, record: dict) -> str:
         """课堂记录的唯一键（换班级后勾选不丢）。"""
 
         return str(record.get('id') or id(record))
 
+    def _board_chip_text(self, name: str) -> str:
+        """班级按钮文字：学期+班级，勾选后就地补「已选 N」。"""
+
+        label = self.board_group_labels.get(name, name)
+        rows = self.board_groups.get(name) or []
+        picked = sum(1 for record in rows
+                     if self.board_checked.get(self._board_key(record)))
+        return label if not picked else '%s · 已选 %d' % (label, picked)
+
+    def _board_chip_width(self, text: str) -> int:
+        return self._class_chip_font.measure(text) + 2 * self.px(12) + 2
+
+    def _board_class_budget(self) -> int:
+        """班级条能用的像素宽度：窗口窄时少摆几个，把剩下的收进「更多」。"""
+
+        width = self.board_class_bar.winfo_width()
+        if width <= 1:
+            width = self.root.winfo_width() - self.px(84)
+        return max(self.px(300), width - self.px(2))
+
+    def _board_visible_classes(self) -> tuple[list[str], int]:
+        """按当前宽度算出还能摆几个班；当前班永远保证可见。"""
+
+        ordered = list(self.board_display_order or self.board_groups)
+        if not ordered:
+            return [], 0
+        budget = self._board_class_budget()
+        gap = self.px(8)
+        more_width = (self._board_chip_width('更多 99 个班')
+                      + self.px(22) + gap)
+        used = 0
+        visible: list[str] = []
+        for index, name in enumerate(ordered):
+            width = self._board_chip_width(self._board_chip_text(name)) + gap
+            remaining = len(ordered) - index - 1
+            reserve = more_width if remaining else 0
+            if visible and used + width + reserve > budget:
+                break
+            visible.append(name)
+            used += width
+        if len(visible) < len(ordered):
+            active = self.board_active_class
+            if active and active not in visible:
+                # 从「更多」里选中的班要能立刻看到：用当前班顶掉最后一个，
+                # 再按实际宽度往前收，别把「更多」按钮挤出窗口。
+                candidate = (list(visible[:-1]) + [active] if visible
+                             else [active])
+                while len(candidate) > 1:
+                    total = sum(self._board_chip_width(
+                        self._board_chip_text(item)) + gap
+                        for item in candidate) + more_width
+                    if total <= budget:
+                        break
+                    candidate.pop(-2)
+                visible = candidate
+        hidden = len(ordered) - len(visible)
+        return visible, max(0, hidden)
+
     def _build_board_class_buttons(self) -> None:
-        """横排班级按钮，最多显示 8 个班。"""
+        """横排班级按钮：按窗口宽度自适应，放不下的进「更多」菜单。"""
 
         for child in self.board_class_bar.winfo_children():
             child.destroy()
         self.board_class_buttons = {}
-        self.board_class_labels = class_button_labels(list(self.board_groups))
-        for name in list(self.board_groups)[:HOME_CLASS_LIMIT]:
+        self.board_more_button = None
+        self._board_hidden_count = 0
+        if not self.board_groups:
+            return
+        visible, hidden = self._board_visible_classes()
+        gap = self.px(8)
+        for name in visible:
             button = tk.Button(
-                self.board_class_bar, text=self.board_class_labels[name],
+                self.board_class_bar, text=self._board_chip_text(name),
                 bd=0, relief='flat',
-                highlightthickness=0, padx=self.px(14), pady=self.px(6),
+                highlightthickness=0, padx=self.px(12), pady=self.px(6),
                 font=(FONT, 10), bg=SURFACE, fg=TEXT_DARK, cursor='hand2',
                 activebackground=SURFACE_ALT, activeforeground=TEXT_DARK,
                 command=lambda n=name: self._show_board_class(n))
-            button.pack(side=LEFT, padx=(0, self.px(8)))
+            button.pack(side=LEFT, padx=(0, gap))
             self.board_class_buttons[name] = button
-        rest = len(self.board_groups) - HOME_CLASS_LIMIT
-        if rest > 0:
-            tk.Label(self.board_class_bar, text='另有 %d 个班未显示' % rest,
-                     bg=CARD, fg=TEXT_MUTED, font=(FONT, 9)).pack(
-                         side=LEFT, padx=(self.px(4), 0))
+        if hidden:
+            chevron = self._icon('chevron_down_muted')
+            more_text = '更多 %d 个班' % hidden
+            if chevron is None:
+                more_text += ' ▾'
+            self.board_more_button = tk.Button(
+                self.board_class_bar, text=more_text,
+                image=chevron, compound='right' if chevron else 'none',
+                bd=0, relief='flat', highlightthickness=0,
+                padx=self.px(12), pady=self.px(6), font=(FONT, 10),
+                bg=SURFACE_ALT, fg=TEXT_MUTED, cursor='hand2',
+                activebackground=SURFACE, activeforeground=TEXT_DARK,
+                command=self._show_board_class_menu)
+            self.board_more_button.pack(side=LEFT, padx=(0, gap))
+            self._board_hidden_count = hidden
+
+    def _schedule_board_class_relayout(self) -> None:
+        if not self.board_groups or self._board_relayout_job is not None:
+            return
+        visible, hidden = self._board_visible_classes()
+        if (visible == list(self.board_class_buttons)
+                and hidden == self._board_hidden_count):
+            return
+        self._board_relayout_job = self.root.after(
+            80, self._relayout_board_classes)
+
+    def _relayout_board_classes(self) -> None:
+        self._board_relayout_job = None
+        if not self.board_groups:
+            return
+        self._build_board_class_buttons()
+        self._refresh_board_state()
+
+    def _on_board_class_bar_resize(self, event) -> None:
+        if abs(event.width - self._board_bar_width) < self.px(12):
+            return
+        self._board_bar_width = event.width
+        self._schedule_board_class_relayout()
+
+    def _show_board_class_menu(self) -> None:
+        """「更多」菜单：按学期分组列出全部班级，选中即切换。"""
+
+        button = self.board_more_button
+        if button is None or not self.board_display_order:
+            return
+        menu = tk.Menu(
+            self.root, tearoff=0, font=(FONT, 10), bg=CARD, fg=TEXT_DARK,
+            activebackground=ACCENT_SOFT, activeforeground=TEXT_DARK,
+            bd=0, relief='flat', activeborderwidth=0)
+        submenus: list[tk.Menu] = []
+        terms: dict[str, list[str]] = {}
+        for name in self.board_display_order:
+            label = self.board_group_labels.get(name, name)
+            terms.setdefault(term_label(label) or '其他', []).append(name)
+        for term, names in terms.items():
+            sub = tk.Menu(
+                menu, tearoff=0, font=(FONT, 10), bg=CARD, fg=TEXT_DARK,
+                activebackground=ACCENT_SOFT, activeforeground=TEXT_DARK,
+                bd=0, relief='flat', activeborderwidth=0)
+            for name in names:
+                label = self.board_group_labels.get(name, name)
+                rows = self.board_groups.get(name) or []
+                picked = sum(1 for record in rows
+                             if self.board_checked.get(
+                                 self._board_key(record)))
+                text = '%s（%d 节%s）' % (
+                    label, len(rows),
+                    '，已选 %d' % picked if picked else '')
+                if name == self.board_active_class:
+                    text = '✓ ' + text
+                sub.add_command(
+                    label=text,
+                    command=lambda n=name: self.root.after(
+                        10, lambda n=n: self._show_board_class(n)))
+            submenus.append(sub)
+            menu.add_cascade(label='%s（%d 个班）' % (term, len(names)),
+                             menu=sub)
+        # Tk 不会替我们保住子菜单的 Python 引用
+        self._board_menu_ref = (menu, submenus)
+        try:
+            menu.tk_popup(button.winfo_rootx(),
+                          button.winfo_rooty() + button.winfo_height()
+                          + self.px(2))
+        finally:
+            try:
+                menu.unpost()
+            except Exception:  # noqa: BLE001
+                pass
+            menu.grab_release()
 
     def _show_board_class(self, name: str) -> None:
         """切到某个班：表格里只列这个班的课堂。"""
@@ -2028,7 +3345,10 @@ class App:
                 '', 'end', iid=key,
                 values=(record.get('shortDesc') or '未命名课堂', day),
                 tags=('checked' if checked else 'unchecked',), **opts)
+        if name and name not in self.board_class_buttons:
+            self._build_board_class_buttons()
         self._refresh_board_state()
+        self._refresh_empty_states()
 
     def on_toggle_board_log(self) -> None:
         """展开/收起板书日志；展开时只拿列表用不掉的高度。
@@ -2109,17 +3429,12 @@ class App:
 
         for name, button in self.board_class_buttons.items():
             active = name == self.board_active_class
-            rows = self.board_groups.get(name) or []
-            picked = sum(1 for record in rows
-                         if self.board_checked.get(self._board_key(record)))
-            short = getattr(self, 'board_class_labels', {}).get(name, name)
-            label = short if not picked else '%s · 已选 %d' % (short, picked)
             button.configure(
-                text=label,
+                text=self._board_chip_text(name),
                 bg=ACCENT if active else SURFACE,
-                fg='#ffffff' if active else TEXT_DARK,
+                fg=ON_ACCENT if active else TEXT_DARK,
                 activebackground=ACCENT_DARK if active else SURFACE_ALT,
-                activeforeground='#ffffff' if active else TEXT_DARK)
+                activeforeground=ON_ACCENT if active else TEXT_DARK)
 
         can_select = (self._has_board_auth() and not self.busy.get()
                       and bool(total_count))
@@ -2127,6 +3442,8 @@ class App:
             button.configure(state='normal' if can_select else 'disabled')
         self.board_all_button.configure(
             state='normal' if (can_select and checked_count) else 'disabled')
+        # 勾选后按钮文字会变长，必要时重新算「更多」的折叠位置
+        self._schedule_board_class_relayout()
 
     def _on_board_click(self, event) -> None:
         """点整行勾选/取消。"""
@@ -2210,11 +3527,10 @@ class App:
         self._busy_kind = 'board'
         self.set_busy(True)
         self.clear_log('board')
-        self.board_progress.show()
         self.board_progress.begin(
             '正在导出板书', '正在读取每节课的板书清单…',
             indeterminate=True,
-            hint='多节课并行导出 · 可折叠班级查看，不会中断')
+            hint='多节课并行导出 · 可继续查看列表，不会中断')
         self.status.set('正在导出所选板书…')
         names = '、'.join((r.get('shortDesc') or '') for r in records[:3])
         if len(records) > 3:
@@ -2282,7 +3598,7 @@ class App:
 
         for panel in (getattr(self, 'invite_progress', None),
                       getattr(self, 'board_progress', None),
-                      getattr(self, 'homework_progress', None)):
+                      getattr(self, 'feedback_progress', None)):
             if panel is not None:
                 panel.tick()
         self.root.after(500, self._tick_progress)
@@ -2304,6 +3620,11 @@ class App:
                                         target=payload.get('target'))
                     else:
                         self.append_log(str(payload))
+                elif kind == 'progress_detail':
+                    panel = self._active_progress()
+                    if panel is not None:
+                        panel.update(0, detail=str(payload),
+                                     indeterminate=True)
                 elif kind == 'progress':
                     done = int(payload.get('done', 0))
                     total = max(1, int(payload.get('total', 1)))
@@ -2374,23 +3695,25 @@ class App:
                         done, total, payload.get('name', '')))
                 elif kind == 'banshu_done':
                     self._finish_boards(payload)
-                elif kind == 'homeworks_listed':
-                    self._homeworks_listed(payload)
-                elif kind == 'homework_event':
-                    self._on_homework_event(payload)
-                elif kind == 'homework_done':
-                    self._finish_homeworks(payload)
-                elif kind == 'homework_list_error':
+                elif kind == 'feedbacks_listed':
+                    self._feedbacks_listed(payload)
+                elif kind == 'feedback_event':
+                    self._on_feedback_event(payload)
+                elif kind == 'feedback_done':
+                    self._finish_feedbacks(payload)
+                elif kind == 'feedback_list_error':
                     panel = self._active_progress()
                     self.set_busy(False)
                     if panel is not None:
-                        panel.fail('列出作业失败', str(payload),
+                        panel.fail('列出反馈失败', str(payload),
                                    hint='确认客户端仍登录后点「重新检测」',
                                    state='失败')
-                    self.status.set('列出作业失败。')
-                    self.append_log('列出作业失败：%s' % payload,
-                                    target='homework')
-                    self._refresh_homework_state()
+                    self.status.set('列出反馈失败。')
+                    self.append_log('列出反馈失败：%s' % payload,
+                                    target='feedback')
+                    self._refresh_feedback_state()
+                elif kind == 'update_checked':
+                    self._finish_update_check(payload)
                 elif kind == 'canceled':
                     panel = self._active_progress()
                     if self._busy_kind == 'invite':
@@ -2435,8 +3758,8 @@ class App:
             return self.invite_progress
         if self._busy_kind in ('board', 'login'):
             return self.board_progress
-        if self._busy_kind == 'homework':
-            return self.homework_progress
+        if self._busy_kind == 'feedback':
+            return self.feedback_progress
         return None
 
     def _on_board_event(self, payload) -> None:
@@ -2545,14 +3868,17 @@ class App:
             ' · %d 节无板书/跳过' % len(failed) if failed else '')
         self.board_progress.complete(
             '板书导出完成', detail,
-            hint='保存位置已打开，可继续折叠查看班级')
+            hint='保存位置已打开，可继续切换班级查看')
         self.status.set('板书导出完成：%d 份 PDF，%d 个班级%s' % (
             total_files, len(groups),
             '，%d 节无板书/跳过' % len(failed) if failed else ''))
         self.append_log('', target='board')
-        self.append_log('===== 板书导出汇总（按班级分组，%s）====='
+        self.append_log('===== 板书导出汇总（按学期+班级分组，%s）====='
                         % payload.get('preset', ''), target='board')
-        for group_name in sorted(groups):
+        for group_name in sorted(
+                groups,
+                key=lambda name: (group_sort_key(name), name),
+                reverse=True):
             self.append_log('[班级] %s（%d 份 PDF）' % (
                 group_name, len(groups[group_name])), target='board')
             for path in groups[group_name]:
@@ -2569,38 +3895,40 @@ class App:
             except OSError:
                 pass
 
-    # ---------- 作业导出 ----------
-    def _homework_log_rows(self) -> int:
-        line_height = max(1, self._log_line_height(self.homework_log))
+    # ---------- 反馈文件导出 ----------
+    def _feedback_log_rows(self) -> int:
+        line_height = max(1, self._log_line_height(self.feedback_log))
         min_tree = self.px(30) + self.px(36) * 2
-        room = self.homework_tree.winfo_height() - min_tree - self.px(28)
+        room = self.feedback_tree.winfo_height() - min_tree - self.px(28)
         return max(0, min(6, int(room // line_height)))
 
-    def on_toggle_homework_log(self) -> None:
-        """展开/收起作业日志；同样只拿列表用不掉的高度。"""
+    def on_toggle_feedback_log(self) -> None:
+        """展开/收起反馈日志；只拿列表用不掉的高度。"""
 
-        log = self.homework_log
+        log = self.feedback_log
         if log.expanded:
             log.set_expanded(False)
             return
-        rows = self._homework_log_rows()
+        rows = self._feedback_log_rows()
         if rows < 2:
-            self.status.set('窗口高度不够：先最大化窗口，再展开「作业运行日志」。')
+            self.status.set('窗口高度不够：先最大化窗口，再展开「反馈运行日志」。')
             return
         log.text.configure(height=rows)
         log.set_expanded(True)
 
-    def _auto_list_homeworks(self) -> None:
+    def _auto_list_feedbacks(self) -> None:
         """时间段变了就自动重列（有登录态、且不在忙）。"""
 
         if not self._has_board_auth():
             return
         if self.busy.get():
-            self._pending_homework_list = True
+            self._pending_feedback_list = True
             return
-        self.on_list_homeworks()
+        self.on_list_feedbacks()
 
-    def on_list_homeworks(self) -> None:
+    def on_list_feedbacks(self) -> None:
+        """按时间段列出历史课堂和作业，供选择后一起导出。"""
+
         if self.busy.get():
             return
         if not self._has_board_auth():
@@ -2612,364 +3940,926 @@ class App:
             return
         try:
             from_ms, to_ms = resolve_range(
-                self.homework_range.get(), self.homework_from.get().strip(),
-                self.homework_to.get().strip())
+                self.feedback_range.get(), self.feedback_from.get().strip(),
+                self.feedback_to.get().strip())
         except ValueError as error:
             messagebox.showwarning(APP_NAME, str(error))
             return
         self.cancel_event = threading.Event()
-        self._busy_kind = 'homework'
+        self._busy_kind = 'feedback'
         self.set_busy(True)
-        self.homework_progress.show()
-        self.homework_progress.begin(
-            '正在列出作业框', '正在读取班级与作业清单…',
-            indeterminate=True, hint='只读清单，不下载作业内容')
-        self.status.set('正在列出作业框…')
-        self.append_log('列出作业框（%s）…' % self.homework_range.get(),
-                        target='homework')
+        self.feedback_progress.begin(
+            '正在列出反馈清单', '正在读取课堂、班级与作业信息…',
+            indeterminate=True, hint='只读清单，不会修改课堂数据')
+        self.status.set('正在列出课堂与作业…')
+        self.append_log('列出反馈清单（%s）…' % self.feedback_range.get(),
+                        target='feedback')
         self.worker = threading.Thread(
-            target=self._homework_list_work, args=(from_ms, to_ms),
+            target=self._feedback_list_work, args=(from_ms, to_ms),
             daemon=True)
         self.worker.start()
 
-    def _homework_list_work(self, from_ms: int, to_ms: int) -> None:
+    def _feedback_list_work(self, from_ms: int, to_ms: int) -> None:
         for attempt in range(2):
             try:
                 session = self._board_session()
-                items = fetch_homeworks(session, from_ms, to_ms,
-                                        on_log=self._thread_homework_log,
-                                        cancel_event=self.cancel_event)
+                self._post('progress_detail', '正在读取历史课堂清单…')
+                records = fetch_records(
+                    session, from_ms, to_ms,
+                    cancel_event=self.cancel_event)
+                class_names: list[str] = []
+                try:
+                    class_names = fetch_class_names(session)
+                except (BatchCancelled, TokenExpired):
+                    raise
+                except Exception as error:  # noqa: BLE001
+                    self._thread_feedback_log(
+                        '班级列表读取失败（%s），将按课堂名分组。' % error)
+                if records:
+                    self._post(
+                        'progress_detail',
+                        '已读取 %d 节课，正在对应班级…' % len(records))
+                    try:
+                        enrich_record_groups(
+                            session, records,
+                            on_progress=lambda done, total: self._post(
+                                'progress_detail',
+                                '正在对应班级 %d / %d…' % (done, total)),
+                            cancel_event=self.cancel_event)
+                    except (BatchCancelled, TokenExpired, HomeworkCancelled):
+                        raise
+                    except Exception as error:  # noqa: BLE001
+                        self._thread_feedback_log(
+                            '班级映射读取失败（%s），将按课堂名分组。' % error)
+                self._post('progress_detail', '正在读取作业清单…')
+                try:
+                    homeworks = fetch_homeworks(
+                        session, from_ms, to_ms,
+                        on_log=self._thread_feedback_log,
+                        cancel_event=self.cancel_event)
+                except (TokenExpired, HomeworkCancelled):
+                    raise
+                except Exception as error:  # noqa: BLE001
+                    self._thread_feedback_log(
+                        '作业清单读取失败（%s），本次只生成课堂权限反馈。'
+                        % error)
+                    homeworks = []
             except TokenExpired:
                 if attempt == 0 and self._renew_board_token():
-                    self._thread_homework_log('登录态已过期，已自动重新获取，继续…')
+                    self._thread_feedback_log('登录态已过期，已自动重新获取，继续…')
                     continue
-                self._post('homework_list_error',
-                           '登录态已失效：请确认电脑上的爱问云仍登录后'
-                           '点「重新检测」，或改用账号密码登录。')
+                self._post(
+                    'feedback_list_error',
+                    '登录态已失效：请确认电脑上的爱问云仍登录后'
+                    '点「重新检测」，或改用账号密码登录。')
                 return
             except HomeworkCancelled as error:
                 self._post('canceled', str(error))
                 return
+            except BatchCancelled as error:
+                self._post('canceled', str(error))
+                return
             except Exception as error:  # noqa: BLE001
-                self._post('homework_list_error',
+                self._post('feedback_list_error',
                            '%s: %s' % (type(error).__name__, error))
                 return
-            self._post('homeworks_listed', items)
+            self._post('feedbacks_listed', {
+                'records': records,
+                'class_names': class_names,
+                'homeworks': homeworks,
+            })
             return
 
-    def _thread_homework_log(self, message: str) -> None:
-        self._post('log', {'target': 'homework', 'message': str(message)})
+    def _thread_feedback_log(self, message: str) -> None:
+        self._post('log', {'target': 'feedback', 'message': str(message)})
 
-    def _homeworks_listed(self, items) -> None:
-        """按班级分组：班级做成横排按钮，列表只显示当前班级的作业框。"""
+    @staticmethod
+    def _feedback_record_key(record: dict) -> str:
+        file_common = record.get('fileCommon') or {}
+        return str(
+            record.get('fileId')
+            or file_common.get('_id')
+            or file_common.get('recordId')
+            or record.get('liveclass')
+            or id(record))
 
-        self.homework_items = list(items or [])
-        self.homework_groups = group_homeworks(self.homework_items)
-        self.homework_class_order = ordered_groups(self.homework_groups)
-        self.homework_checked = {self._homework_key(row): False
-                                 for row in self.homework_items}
-        self.homework_active_class = (self.homework_class_order[0]
-                                      if self.homework_class_order else '')
-        self._build_homework_class_buttons()
-        self._show_homework_class(self.homework_active_class)
+    def _feedback_key(self, entry: dict) -> str:
+        if isinstance(entry, dict) and entry.get('key'):
+            return str(entry['key'])
+        return self._feedback_record_key(entry)
 
-        total = len(self.homework_items)
-        group_count = len([name for name in self.homework_class_order
-                           if name != UNCLASSIFIED_GROUP_NAME])
-        if total:
-            meta = '共 %d 个作业框' % total
-            if group_count:
-                meta += ' · %d 个班级' % group_count
-            self.homework_meta.set(meta + ' · 最新在上')
-            self.client_hint.set(
-                '已自动列出 %d 个作业框；点上面的班级按钮换班，'
-                '勾选后点「导出所选作业」。' % total)
-            self.status.set('%s；勾选后点「导出所选作业」。' % meta)
-            self.append_log('%s，按班级分组；每个作业框会导出一个同名 CSV。'
-                            % meta, target='homework')
+    def _feedback_group_for_record(self, record: dict) -> str:
+        key = self._feedback_record_key(record)
+        return (self.feedback_group_of.get(key)
+                or class_group(record.get('shortDesc') or '')
+                or '未分类')
+
+    def _feedbacks_listed(self, payload) -> None:
+        """按「班级 + 课次」组装反馈包：一个课次一行，固定三项内容。"""
+
+        if isinstance(payload, dict):
+            records = list(payload.get('records') or [])
+            class_names = list(payload.get('class_names') or [])
+            homeworks = list(payload.get('homeworks') or [])
         else:
-            self.homework_meta.set('该时间段没有作业框')
-            self.client_hint.set('该时间段没有作业：换个时间段（如「最近30天」）'
-                                 '就会自动重列。')
-            self.status.set('该时间段没有作业框：换个时间段再列出。')
-            self.append_log('该时间段没有作业框。', target='homework')
+            records = list(payload or [])
+            class_names = []
+            homeworks = []
+
+        bundles = build_feedback_bundles(
+            records, homeworks, class_names=class_names)
+        entries = list(bundles)
+        self.feedback_group_of = {}
+        assignment = {}
+        for entry in entries:
+            for item in (entry.get('components') or {}).values():
+                if isinstance(item, dict):
+                    assignment[id(item)] = entry['class']
+        for title_label, items in (('history', records),
+                                   ('homework', homeworks)):
+            for item in items:
+                key = (self._feedback_record_key(item)
+                       if title_label == 'history'
+                       else str(item.get('zuoyeId') or item.get('id')
+                                or id(item)))
+                label = assignment.get(id(item), '')
+                if label:
+                    self.feedback_group_of[key] = label
+
+        self.feedback_items = entries
+        self.feedback_class_order = sorted(
+            {entry['class'] for entry in entries},
+            key=lambda name: (
+                -max((int(entry.get('time') or 0) for entry in entries
+                      if entry['class'] == name), default=0),
+                group_sort_key(name), name))
+        self.feedback_checked = {entry['key']: False for entry in entries}
+        self.feedback_file_checked = {}
+        self.feedback_expanded = {}
+        for entry in entries:
+            for kind in COMPONENT_ORDER:
+                self.feedback_file_checked[
+                    self._feedback_child_id(entry['key'], kind)] = False
+        self.feedback_active_class = '全部班级'
+        self._build_feedback_class_buttons()
+        self._show_feedback_rows()
+
+        if entries:
+            complete = sum(1 for entry in entries if not entry.get('missing'))
+            missing = len(entries) - complete
+            meta = '共 %d 个课次反馈 · %d 个班级 · 三项齐全 %d · 有缺失 %d' % (
+                len(entries), len(self.feedback_class_order), complete, missing)
+            self.feedback_meta.set(meta + ' · 按时间降序')
+            self.client_hint.set(
+                '已组装 %d 个课次反馈；展开课次后直接勾选要导出的文件即可。'
+                % len(entries))
+            self.status.set('%s；勾选后导出。' % meta)
+            self.append_log(
+                '%s；按班级分文件夹，每个课次输出「第X节课反馈」。'
+                % meta, target='feedback')
+            for name in self.feedback_class_order:
+                rows = [entry for entry in entries if entry['class'] == name]
+                self.append_log(
+                    '  [%s] %d 个课次：%s' % (
+                        name, len(rows),
+                        '、'.join(entry['title'] for entry in rows)),
+                    target='feedback')
+        else:
+            self.feedback_meta.set('该时间段没有可组装的课次反馈')
+            self.client_hint.set(
+                '该时间段没有可组装的课次反馈：换个时间段'
+                '（如「最近30天」）再列出。')
+            self.status.set('该时间段没有可组装的课次反馈：换个时间段再列出。')
+            self.append_log(
+                '该时间段没有课堂或作业，未生成课次反馈。', target='feedback')
 
         self.set_busy(False)
-        self.homework_progress.hide()
-        self._refresh_homework_state()
-        if self._pending_homework_list:
-            self._pending_homework_list = False
-            self.on_list_homeworks()
+        self.feedback_progress.hide()
+        self._refresh_feedback_state()
+        if self._pending_feedback_list:
+            self._pending_feedback_list = False
+            self.on_list_feedbacks()
 
-    def _homework_key(self, row: dict) -> str:
-        """作业框唯一键：优先 zuoyeId，保证换班级后勾选不丢。"""
+    def _feedback_entries_for_class(self, name: str) -> list[dict]:
+        if not name or name == '全部班级':
+            return list(self.feedback_items)
+        return [entry for entry in self.feedback_items
+                if entry['class'] == name]
 
-        return str(row.get('zuoyeId') or row.get('id') or id(row))
+    @staticmethod
+    def _feedback_child_id(key: str, kind: str) -> str:
+        return '%s|%s' % (key, kind)
 
-    def _build_homework_class_buttons(self) -> None:
-        """横排班级按钮，最多显示 8 个班（留够常见 3~6 个班的位置）。"""
+    def _feedback_file_selected(self, key: str, kind: str) -> bool:
+        return bool(self.feedback_file_checked.get(
+            self._feedback_child_id(key, kind), False))
 
-        for child in self.homework_class_bar.winfo_children():
+    def _feedback_selected_file_count(self, entry: dict | None = None) -> int:
+        rows = [entry] if entry is not None else self.feedback_items
+        return sum(
+            1 for item in rows for kind in COMPONENT_ORDER
+            if self._feedback_file_selected(item['key'], kind))
+
+    def _feedback_entry_selected(self, entry: dict) -> bool:
+        return any(self._feedback_file_selected(entry['key'], kind)
+                   for kind in COMPONENT_ORDER)
+
+    def _feedback_entry_by_key(self, key: str) -> dict | None:
+        return next((entry for entry in self.feedback_items
+                     if entry['key'] == key), None)
+
+    def _feedback_check_icon(self, checked: bool, child: bool = False):
+        kind = 'checked' if checked else 'unchecked'
+        if child:
+            icon = self._check_icon('child_' + kind)
+            if icon is not None:
+                return icon
+        return self._check_icon(kind, leaf=True)
+
+    def _feedback_check_cell(self, checked: bool,
+                             child: bool = False) -> dict:
+        icon = self._feedback_check_icon(checked, child)
+        if icon is not None:
+            return {'image': icon, 'text': ''}
+        glyph = '☑' if checked else '☐'
+        return {'text': ('   ' + glyph) if child else glyph}
+
+    def _feedback_row_tag(self, checked: bool, child: bool = False) -> str:
+        if child:
+            return 'child_checked' if checked else 'child_unchecked'
+        return 'checked' if checked else 'unchecked'
+
+    def _update_feedback_row(self, iid: str, checked: bool,
+                             child: bool = False) -> None:
+        cell = self._feedback_check_cell(checked, child)
+        tag = self._feedback_row_tag(checked, child)
+        self.feedback_tree.item(iid, tags=(tag,), **cell)
+
+    def _feedback_child_values(self, entry: dict, kind: str) -> tuple:
+        selected = self._feedback_file_selected(entry['key'], kind)
+        item = (entry.get('components') or {}).get(kind)
+        name = feedback_component_name(entry, kind)
+        if item is None:
+            state = '暂时缺失'
+            name = '⚠ ' + name
+        else:
+            state = '已选择' if selected else '未选择'
+        return ('', name, state)
+
+    def _refresh_feedback_children(self, entry: dict) -> None:
+        for kind in COMPONENT_ORDER:
+            iid = self._feedback_child_id(entry['key'], kind)
+            if not self.feedback_tree.exists(iid):
+                continue
+            self._update_feedback_row(
+                iid, self._feedback_file_selected(entry['key'], kind),
+                child=True)
+            self.feedback_tree.item(
+                iid, values=self._feedback_child_values(entry, kind))
+
+    def _feedback_chip_text(self, name: str) -> str:
+        if name == '全部班级':
+            return '全部 %d' % len(self.feedback_items)
+        count = len(self._feedback_entries_for_class(name))
+        return '%s %d' % (name, count)
+
+    def _feedback_chip_width(self, text: str) -> int:
+        return self._class_chip_font.measure(text) + 2 * self.px(12) + 2
+
+    def _feedback_class_budget(self) -> int:
+        width = self.feedback_class_bar.winfo_width()
+        if width <= 1:
+            width = self.root.winfo_width() - self.px(420)
+        return max(self.px(260), width - self.px(2))
+
+    def _feedback_visible_classes(self) -> tuple[list[str], int]:
+        ordered = ['全部班级'] + list(self.feedback_class_order)
+        if not self.feedback_class_order:
+            return [], 0
+        budget = self._feedback_class_budget()
+        gap = self.px(8)
+        more_width = (self._feedback_chip_width('更多 99 个班')
+                      + self.px(22) + gap)
+        used = 0
+        visible: list[str] = []
+        for index, name in enumerate(ordered):
+            width = self._feedback_chip_width(self._feedback_chip_text(name)) + gap
+            remaining = len(ordered) - index - 1
+            reserve = more_width if remaining else 0
+            if visible and used + width + reserve > budget:
+                break
+            visible.append(name)
+            used += width
+        if len(visible) < len(ordered):
+            active = self.feedback_active_class
+            if active and active not in visible:
+                candidate = list(visible[:-1]) + [active]
+                while len(candidate) > 1:
+                    total = sum(self._feedback_chip_width(
+                        self._feedback_chip_text(item)) + gap
+                        for item in candidate) + more_width
+                    if total <= budget:
+                        break
+                    candidate.pop(-2)
+                visible = candidate
+        hidden = len(ordered) - len(visible)
+        return visible, max(0, hidden)
+
+    def _build_feedback_class_buttons(self) -> None:
+        for child in self.feedback_class_bar.winfo_children():
             child.destroy()
-        self.homework_class_buttons = {}
-        self.homework_class_labels = class_button_labels(
-            self.homework_class_order)
-        for name in self.homework_class_order[:HOME_CLASS_LIMIT]:
+        self.feedback_class_buttons = {}
+        self.feedback_more_button = None
+        self._feedback_hidden_count = 0
+        if not self.feedback_items:
+            return
+        visible, hidden = self._feedback_visible_classes()
+        gap = self.px(8)
+        for name in visible:
             button = tk.Button(
-                self.homework_class_bar, text=self.homework_class_labels[name],
+                self.feedback_class_bar, text=self._feedback_chip_text(name),
                 bd=0, relief='flat',
-                highlightthickness=0, padx=self.px(14), pady=self.px(6),
-                font=(FONT, 10), bg=SURFACE, fg=TEXT_DARK, cursor='hand2',
+                highlightthickness=1,
+                highlightbackground=BORDER_STRONG,
+                highlightcolor=BORDER_STRONG,
+                padx=self.px(12), pady=self.px(6), font=(FONT, 10),
+                bg=CARD, fg=TEXT_DARK, cursor='hand2',
                 activebackground=SURFACE_ALT, activeforeground=TEXT_DARK,
-                command=lambda n=name: self._show_homework_class(n))
-            button.pack(side=LEFT, padx=(0, self.px(8)))
-            self.homework_class_buttons[name] = button
-        rest = len(self.homework_class_order) - HOME_CLASS_LIMIT
-        if rest > 0:
-            tk.Label(self.homework_class_bar,
-                     text='另有 %d 个班未显示' % rest, bg=CARD,
-                     fg=TEXT_MUTED, font=(FONT, 9)).pack(
-                         side=LEFT, padx=(self.px(4), 0))
+                command=lambda n=name: self._show_feedback_class(n))
+            button.pack(side=LEFT, padx=(0, gap))
+            self.feedback_class_buttons[name] = button
+        if hidden:
+            chevron = self._icon('chevron_down_muted')
+            more_text = '更多 %d 个班' % hidden
+            if chevron is None:
+                more_text += ' ▾'
+            self.feedback_more_button = tk.Button(
+                self.feedback_class_bar, text=more_text,
+                image=chevron, compound='right' if chevron else 'none',
+                bd=0, relief='flat', highlightthickness=1,
+                highlightbackground=BORDER_STRONG,
+                highlightcolor=BORDER_STRONG,
+                padx=self.px(12), pady=self.px(6), font=(FONT, 10),
+                bg=SURFACE_ALT, fg=TEXT_MUTED, cursor='hand2',
+                activebackground=SURFACE, activeforeground=TEXT_DARK,
+                command=self._show_feedback_class_menu)
+            self.feedback_more_button.pack(side=LEFT, padx=(0, gap))
+            self._feedback_hidden_count = hidden
+        self._refresh_feedback_class_buttons()
 
-    def _show_homework_class(self, name: str) -> None:
-        """切到某个班：表格里只列这个班的作业框。"""
+    def _schedule_feedback_class_relayout(self) -> None:
+        if not self.feedback_items or self._feedback_relayout_job is not None:
+            return
+        visible, hidden = self._feedback_visible_classes()
+        if (visible == list(self.feedback_class_buttons)
+                and hidden == self._feedback_hidden_count):
+            return
+        self._feedback_relayout_job = self.root.after(
+            80, self._relayout_feedback_classes)
 
-        self.homework_active_class = name
-        self.homework_tree.delete(*self.homework_tree.get_children())
-        rows = self.homework_groups.get(name) or []
-        for row in rows:
-            key = self._homework_key(row)
-            checked = bool(self.homework_checked.get(key))
-            icon = self._check_icon('checked' if checked else 'unchecked',
-                                    leaf=True)
-            opts = ({'image': icon, 'text': ''} if icon
-                    else {'text': '☑' if checked else '☐'})
-            self.homework_tree.insert(
+    def _relayout_feedback_classes(self) -> None:
+        self._feedback_relayout_job = None
+        if not self.feedback_items:
+            return
+        self._build_feedback_class_buttons()
+        self._refresh_feedback_state()
+
+    def _on_feedback_class_bar_resize(self, event) -> None:
+        if abs(event.width - self._feedback_bar_width) < self.px(12):
+            return
+        self._feedback_bar_width = event.width
+        self._schedule_feedback_class_relayout()
+
+    def _show_feedback_class_menu(self) -> None:
+        button = self.feedback_more_button
+        if button is None or not self.feedback_class_order:
+            return
+        menu = tk.Menu(
+            self.root, tearoff=0, font=(FONT, 10), bg=CARD, fg=TEXT_DARK,
+            activebackground=ACCENT_SOFT, activeforeground=TEXT_DARK,
+            bd=0, relief='flat', activeborderwidth=0)
+        menu.add_command(
+            label='%s全部班级' % ('✓ ' if self.feedback_active_class == '全部班级'
+                               else ''),
+            command=lambda: self._show_feedback_class('全部班级'))
+        menu.add_separator()
+        for name in self.feedback_class_order:
+            rows = self._feedback_entries_for_class(name)
+            text = '%s（%d 个课次）' % (name, len(rows))
+            if name == self.feedback_active_class:
+                text = '✓ ' + text
+            menu.add_command(
+                label=text,
+                command=lambda n=name: self.root.after(
+                    10, lambda n=n: self._show_feedback_class(n)))
+        self._feedback_menu_ref = menu
+        try:
+            menu.tk_popup(button.winfo_rootx(),
+                          button.winfo_rooty() + button.winfo_height()
+                          + self.px(2))
+        finally:
+            try:
+                menu.unpost()
+            except Exception:  # noqa: BLE001
+                pass
+            menu.grab_release()
+
+    def _refresh_feedback_class_buttons(self) -> None:
+        enabled = bool(self.feedback_items) and not self.busy.get()
+        for name, button in self.feedback_class_buttons.items():
+            active = name == self.feedback_active_class
+            button.configure(
+                state='normal' if enabled else 'disabled',
+                bg=ACCENT_SOFT if active else CARD,
+                fg=ACCENT_DARK if active else TEXT_DARK,
+                highlightbackground=ACCENT if active else BORDER_STRONG,
+                highlightcolor=ACCENT if active else BORDER_STRONG,
+                font=(FONT, 10, 'bold') if active else (FONT, 10))
+        if self.feedback_more_button is not None:
+            self.feedback_more_button.configure(
+                state='normal' if enabled else 'disabled')
+
+    def _show_feedback_class(self, name: str) -> None:
+        self.feedback_active_class = name or '全部班级'
+        if (self.feedback_active_class not in self.feedback_class_buttons
+                and self.feedback_active_class != '全部班级'):
+            self._build_feedback_class_buttons()
+        self._refresh_feedback_class_buttons()
+        self._show_feedback_rows()
+
+    def _show_feedback_rows(self) -> None:
+        """按班级筛选显示课次反馈；父行可展开成三个可选文件。"""
+
+        self.feedback_tree.delete(*self.feedback_tree.get_children())
+        selected = self.feedback_active_class or '全部班级'
+        for entry in self._feedback_entries_for_class(selected):
+            key = entry['key']
+            checked = bool(self.feedback_checked.get(key))
+            opts = self._feedback_check_cell(checked)
+            expanded = bool(self.feedback_expanded.get(key))
+            title = ('▾ ' if expanded else '▸ ') + entry['title']
+            self.feedback_tree.insert(
                 '', 'end', iid=key,
-                values=(homework_title(row),
-                        self._homework_progress_text(row),
-                        self._homework_day(row)),
-                tags=('checked' if checked else 'unchecked',), **opts)
-        self._refresh_homework_state()
+                values=(entry['class'], title,
+                        self._feedback_day(entry)),
+                tags=(self._feedback_row_tag(checked),),
+                open=expanded, **opts)
+            for kind in COMPONENT_ORDER:
+                child = self._feedback_child_id(key, kind)
+                child_checked = self._feedback_file_selected(key, kind)
+                child_opts = self._feedback_check_cell(
+                    child_checked, child=True)
+                self.feedback_tree.insert(
+                    key, 'end', iid=child,
+                    values=self._feedback_child_values(entry, kind),
+                    tags=(self._feedback_row_tag(child_checked, child=True),),
+                    **child_opts)
+        self._refresh_feedback_state()
+        self._refresh_empty_states()
 
-    def _homework_progress_text(self, row: dict) -> str:
-        submit = row.get('tijiaoNum') or 0
-        total = row.get('zuoyesNum') or 0
-        pigai = row.get('pigaiNum') or 0
-        if not total:
-            return '应交未知'
-        return '已交 %s/%s · 已批 %s' % (submit, total, pigai)
-
-    def _homework_day(self, row: dict) -> str:
-        stamp = homework_time(row)
+    def _feedback_day(self, entry: dict) -> str:
+        stamp = entry.get('time') or 0
         if not stamp:
             return '-'
-        return datetime.datetime.fromtimestamp(stamp / 1000).strftime(
-            '%Y-%m-%d')
+        try:
+            return datetime.datetime.fromtimestamp(
+                stamp / 1000).strftime('%Y-%m-%d %H:%M')
+        except (TypeError, ValueError, OSError, OverflowError):
+            return '-'
 
-    def _refresh_homework_state(self) -> None:
-        checked = sum(1 for value in self.homework_checked.values() if value)
-        total = len(self.homework_items)
-        self.homework_badge_count.configure(
-            text='已选 %d / %d 个' % (checked, total),
-            bg=CARD, fg=ACCENT_DARK if checked else TEXT_MUTED,
-            font=(FONT, 10, 'bold') if checked else (FONT, 10))
-
-        for name, button in self.homework_class_buttons.items():
-            active = name == self.homework_active_class
-            rows = self.homework_groups.get(name) or []
-            picked = sum(1 for row in rows
-                         if self.homework_checked.get(self._homework_key(row)))
-            short = getattr(self, 'homework_class_labels', {}).get(name, name)
-            label = short if not picked else '%s · 已选 %d' % (short, picked)
-            button.configure(
-                text=label,
-                bg=ACCENT if active else SURFACE,
-                fg='#ffffff' if active else TEXT_DARK,
-                activebackground=ACCENT_DARK if active else SURFACE_ALT,
-                activeforeground='#ffffff' if active else TEXT_DARK)
-
+    def _refresh_feedback_state(self) -> None:
+        selected_entries = [entry for entry in self.feedback_items
+                            if self._feedback_entry_selected(entry)]
+        files = sum(self._feedback_selected_file_count(entry)
+                    for entry in selected_entries)
+        total = len(self.feedback_items)
+        self.feedback_badge_count.configure(
+            text='已选 %d 个文件 · %d 个课次' % (files, len(selected_entries)),
+            bg=CARD, fg=ACCENT_DARK if files else TEXT_MUTED,
+            font=(FONT, 10, 'bold') if files else (FONT, 10))
         can_select = (self._has_board_auth() and not self.busy.get()
                       and bool(total))
-        for button in (self.homework_select_button,
-                       self.homework_clear_button):
+        for button in (self.feedback_select_button,
+                       self.feedback_clear_button):
             button.configure(state='normal' if can_select else 'disabled')
-        self.homework_export_button.configure(
-            state='normal' if (can_select and checked) else 'disabled')
-        self.homework_list_button.configure(
+        self.feedback_export_button.configure(
+            state='normal' if (can_select and files) else 'disabled')
+        self.feedback_list_button.configure(
             state='normal' if (self._has_board_auth()
                                and not self.busy.get()) else 'disabled')
+        self._refresh_feedback_class_buttons()
+        selected = self.feedback_active_class or '全部班级'
+        if selected == '全部班级':
+            self.feedback_class_hint.configure(
+                text='全部班级 · 按时间降序')
+        else:
+            self.feedback_class_hint.configure(
+                text='%s · %d 个课次' % (
+                    selected, len(self._feedback_entries_for_class(selected))))
 
-    def _on_homework_click(self, event) -> None:
-        region = self.homework_tree.identify_region(event.x, event.y)
+    def _on_feedback_click(self, event) -> None:
+        region = self.feedback_tree.identify_region(event.x, event.y)
         if region not in ('cell', 'tree'):
             return
-        iid = self.homework_tree.identify_row(event.y)
-        if not iid:
+        iid = self.feedback_tree.identify_row(event.y)
+        if not iid or self.busy.get():
             return
-        if self.busy.get():
+        if iid not in self.feedback_checked:
+            self._toggle_feedback_file(iid)
+            return 'break'
+        element = self.feedback_tree.identify_element(event.x, event.y)
+        if region == 'tree' and 'indicator' in str(element):
+            # 点 Treeview 自带的小三角：交给控件展开/收起，稍后记住状态。
+            self.root.after(30, lambda i=iid: self._remember_feedback_open(i))
             return
-        self._toggle_homework(iid)
+        column = self.feedback_tree.identify_column(event.x)
+        if region == 'cell' and column != '#0':
+            self._toggle_feedback_expand(iid)
+            return 'break'
+        self._toggle_feedback(iid)
         return 'break'
 
-    def _toggle_homework(self, iid: str) -> None:
-        self.homework_checked[iid] = not self.homework_checked.get(iid, False)
-        checked = bool(self.homework_checked.get(iid))
-        tags = ('checked' if checked else 'unchecked',)
-        icon = self._check_icon('checked' if checked else 'unchecked',
-                                leaf=True)
-        if icon is not None:
-            self.homework_tree.item(iid, image=icon, text='', tags=tags)
-        else:
-            self.homework_tree.item(iid, text='☑' if checked else '☐',
-                                    tags=tags)
-        self._refresh_homework_state()
+    def _remember_feedback_open(self, iid: str) -> None:
+        if iid in self.feedback_checked:
+            opened = bool(self.feedback_tree.item(iid, 'open'))
+            self.feedback_expanded[iid] = opened
+            self._update_feedback_parent_title(iid, opened)
 
-    def on_select_all_homeworks(self) -> None:
-        """全选 / 取消当前班级的作业框（其他班级的勾选不动）。"""
+    def _update_feedback_parent_title(self, iid: str, opened: bool) -> None:
+        entry = self._feedback_entry_by_key(iid)
+        if entry is None:
+            return
+        self.feedback_tree.item(
+            iid, values=(entry['class'],
+                         ('▾ ' if opened else '▸ ') + entry['title'],
+                         self._feedback_day(entry)))
 
-        rows = self.homework_groups.get(self.homework_active_class) or []
-        keys = [self._homework_key(row) for row in rows]
-        target = not all(self.homework_checked.get(key) for key in keys) \
-            if keys else False
-        for key in keys:
-            self.homework_checked[key] = target
-        self._show_homework_class(self.homework_active_class)
+    def _toggle_feedback_expand(self, iid: str) -> None:
+        if iid not in self.feedback_checked:
+            return
+        opened = not bool(self.feedback_tree.item(iid, 'open'))
+        self.feedback_expanded[iid] = opened
+        self.feedback_tree.item(iid, open=opened)
+        self._update_feedback_parent_title(iid, opened)
 
-    def on_clear_homeworks(self) -> None:
-        for key in list(self.homework_checked):
-            self.homework_checked[key] = False
-        self._show_homework_class(self.homework_active_class)
+    def _toggle_feedback(self, iid: str) -> None:
+        """父行：整节课反馈的勾选；勾选/取消时三项文件一起切换。"""
 
-    def _checked_homeworks(self) -> list[dict]:
-        """所有班级里勾选的作业框（按列出顺序）。"""
+        target = not self.feedback_checked.get(iid, False)
+        self.feedback_checked[iid] = target
+        entry = self._feedback_entry_by_key(iid)
+        if entry is not None:
+            for kind in COMPONENT_ORDER:
+                self.feedback_file_checked[
+                    self._feedback_child_id(iid, kind)] = target
+            self._refresh_feedback_children(entry)
+        self._update_feedback_row(iid, target)
+        self._refresh_feedback_state()
 
-        return [row for row in self.homework_items
-                if self.homework_checked.get(self._homework_key(row))]
+    def _toggle_feedback_file(self, iid: str) -> None:
+        """子行：只切换这一个文件，其他文件不受影响。"""
 
-    def on_export_homeworks(self) -> None:
+        key, _, kind = iid.rpartition('|')
+        if key not in self.feedback_checked or not kind:
+            return
+        current = self._feedback_file_selected(key, kind)
+        self.feedback_file_checked[self._feedback_child_id(key, kind)] = (
+            not current)
+        entry = self._feedback_entry_by_key(key)
+        if entry is not None:
+            self._refresh_feedback_children(entry)
+            selected = self._feedback_entry_selected(entry)
+            self.feedback_checked[key] = selected
+            self._update_feedback_row(key, selected)
+        self._refresh_feedback_state()
+
+    def on_select_all_feedbacks(self) -> None:
+        """全选 / 取消当前班级里的所有文件。"""
+
+        rows = self._feedback_entries_for_class(
+            self.feedback_active_class or '全部班级')
+        all_selected = bool(rows) and all(
+            self._feedback_file_selected(entry['key'], kind)
+            for entry in rows for kind in COMPONENT_ORDER)
+        target = not all_selected
+        for entry in rows:
+            key = entry['key']
+            self.feedback_checked[key] = target
+            for kind in COMPONENT_ORDER:
+                self.feedback_file_checked[
+                    self._feedback_child_id(key, kind)] = target
+        self._show_feedback_rows()
+
+    def on_clear_feedbacks(self) -> None:
+        for key in list(self.feedback_checked):
+            self.feedback_checked[key] = False
+            for kind in COMPONENT_ORDER:
+                self.feedback_file_checked[
+                    self._feedback_child_id(key, kind)] = False
+        self._show_feedback_rows()
+
+    def _checked_feedbacks(self) -> list[dict]:
+        return [entry for entry in self.feedback_items
+                if self._feedback_entry_selected(entry)]
+
+    def on_export_feedbacks(self) -> None:
         if self.busy.get():
             return
         if not self._has_board_auth():
             messagebox.showwarning(APP_NAME, '还没有可用的登录态。')
             return
-        picked = self._checked_homeworks()
+        picked = self._checked_feedbacks()
         if not picked:
-            messagebox.showwarning(APP_NAME, '请先勾选要导出的作业框。')
+            messagebox.showwarning(APP_NAME, '请先勾选要导出的课次反馈。')
             return
-        initial = homework_out_root()
+        prepared: list[dict] = []
+        for entry in picked:
+            selected = [kind for kind in COMPONENT_ORDER
+                        if self._feedback_file_selected(entry['key'], kind)]
+            bundle = dict(entry)
+            bundle['selected'] = selected
+            prepared.append(bundle)
+        preview = sum(1 for bundle in prepared
+                      if PREVIEW in bundle['selected']
+                      and (bundle.get('components') or {}).get(PREVIEW))
+        consolidation = sum(
+            1 for bundle in prepared
+            if CONSOLIDATION in bundle['selected']
+            and (bundle.get('components') or {}).get(CONSOLIDATION))
+        history = sum(1 for bundle in prepared
+                      if 'history' in bundle['selected']
+                      and (bundle.get('components') or {}).get('history'))
+        missing = sum(
+            1 for bundle in prepared
+            for kind in (bundle.get('missing') or [])
+            if kind in bundle['selected'])
+        unselected = sum(
+            len(set(COMPONENT_ORDER) - set(bundle['selected']))
+            for bundle in prepared)
+        initial = feedback_out_root()
         initial_dir = initial if initial.exists() else Path.home() / 'Desktop'
-        chosen = filedialog.askdirectory(title='选择作业 CSV 保存位置',
-                                         initialdir=str(initial_dir),
-                                         mustexist=False)
+        chosen = filedialog.askdirectory(
+            title='选择反馈文件保存位置', initialdir=str(initial_dir),
+            mustexist=False)
         if not chosen:
             self.status.set('已取消：未选择保存位置。')
             return
         out_root = Path(chosen)
         self.cancel_event = threading.Event()
-        self._busy_kind = 'homework'
+        self._busy_kind = 'feedback'
         self.set_busy(True)
-        self.clear_log('homework')
-        self.homework_progress.show()
-        self.homework_progress.begin(
-            '正在导出作业成绩', '正在逐个读取作业框的学生成绩…',
+        self.clear_log('feedback')
+        self.feedback_progress.begin(
+            '正在导出反馈文件', '正在读取课前预习、课后巩固与课堂权限…',
             indeterminate=True,
-            hint='一个作业框一个 CSV，文件名和爱问云的统计导出一样')
-        self.status.set('正在导出 %d 个作业框…' % len(picked))
-        self.append_log('导出 %d 个作业框的成绩，保存到：%s'
-                        % (len(picked), out_root), target='homework')
+            hint='按班级分文件夹 · 每个课次生成「第X节课反馈」')
+        self.status.set(
+            '正在导出 %d 个课次反馈（预习 %d / 巩固 %d / 权限 %d，'
+            '缺失 %d，未选 %d）…'
+            % (len(prepared), preview, consolidation, history, missing,
+               unselected))
+        self.append_log(
+            '导出 %d 个课次反馈（预习 %d / 巩固 %d / 权限 %d，缺失 %d，'
+            '未选 %d），保存到：%s'
+            % (len(prepared), preview, consolidation, history, missing,
+               unselected, out_root), target='feedback')
         self.worker = threading.Thread(
-            target=self._homework_export_work,
-            args=(picked, out_root), daemon=True)
+            target=self._feedback_export_work,
+            args=(prepared, out_root), daemon=True)
         self.worker.start()
 
-    def _homework_export_work(self, picked: list[dict],
+    def _feedback_export_work(self, bundles: list[dict],
                               out_root: Path) -> None:
         for attempt in range(2):
             try:
                 session = self._board_session()
-                result = export_homeworks(
-                    session, picked, out_root,
+                result = export_feedback_bundles(
+                    session, bundles, out_root,
                     on_event=lambda payload: self._post(
-                        'homework_event', payload),
+                        'feedback_event', payload),
                     cancel_event=self.cancel_event,
-                    logger=self._thread_homework_log)
+                    logger=self._thread_feedback_log)
             except TokenExpired:
                 if attempt == 0 and self._renew_board_token():
-                    self._thread_homework_log('登录态已过期，已自动重新获取，继续…')
+                    self._thread_feedback_log('登录态已过期，已自动重新获取，继续…')
                     continue
-                self._post('error',
-                           '登录态已失效：请确认电脑上的爱问云仍登录后'
-                           '点「重新检测」，或改用账号密码登录。')
+                self._post(
+                    'error',
+                    '登录态已失效：请确认电脑上的爱问云仍登录后'
+                    '点「重新检测」，或改用账号密码登录。')
                 return
-            except HomeworkCancelled as error:
+            except FeedbackCancelled as error:
                 self._post('canceled', str(error))
                 return
             except Exception as error:  # noqa: BLE001
                 self._post('error',
                            '%s: %s' % (type(error).__name__, error))
                 return
-            self._post('homework_done', result)
+            self._post('feedback_done', result)
             return
 
-    def _on_homework_event(self, payload) -> None:
+    def _on_feedback_event(self, payload) -> None:
         if not isinstance(payload, dict):
             return
         phase = str(payload.get('phase') or '')
         done = int(payload.get('done', 0) or 0)
         total = max(1, int(payload.get('total', 1) or 1))
         name = str(payload.get('name') or '')
-        percent = (done / total * 100.0) if total else 100.0
+        group = str(payload.get('group') or '')
+        kind = str(payload.get('kind') or '')
+        label = '课次反馈' if kind == 'feedback' else (
+            '课堂权限' if kind == 'history' else '作业成绩')
+        percent = float(payload.get(
+            'percent', done / total * 100.0) or 0)
         if phase == 'start':
-            detail = '第 %d / %d 个作业框 · %s' % (
-                int(payload.get('index') or 0), total, name)
+            detail = '正在生成%s · %s / %s' % (label, group, name)
         elif phase == 'done':
-            detail = '已完成 %d / %d 个' % (done, total)
+            detail = '已完成 %d / %d 个课次' % (done, total)
         elif phase == 'failed':
-            detail = '读取失败，继续下一个 · %s' % name
+            detail = '生成失败，继续下一个 · %s' % name
         else:
             detail = name
-        self.homework_progress.update(percent, detail=detail,
-                                      elapsed=payload.get('elapsed'))
-        self.status.set('正在导出作业成绩：已完成 %d / %d 个' % (done, total))
+        self.feedback_progress.update(
+            percent, detail=detail, elapsed=payload.get('elapsed'))
+        self.status.set('正在导出反馈：已完成 %d / %d 个课次' % (done, total))
 
-    def _finish_homeworks(self, payload: dict) -> None:
+    def _finish_feedbacks(self, payload: dict) -> None:
         self.set_busy(False)
         files = payload.get('files') or []
         failed = payload.get('failed') or []
-        partial = [item for item in files if item.get('complete') is False]
-        detail = '%d 个 CSV%s%s' % (
-            len(files),
-            ' · %d 个失败' % len(failed) if failed else '',
-            ' · %d 个人数不足' % len(partial) if partial else '')
-        self.homework_progress.complete(
-            '作业导出完成', detail,
-            hint='保存位置即将打开，可继续勾选别的作业框')
-        self.status.set('作业导出完成：%d 个 CSV%s%s' % (
-            len(files),
-            '，%d 个失败' % len(failed) if failed else '',
-            '，%d 个人数不足' % len(partial) if partial else ''))
-        self.append_log('', target='homework')
-        self.append_log('===== 作业导出汇总（用时 %ss）====='
-                        % payload.get('elapsed', '-'), target='homework')
+        complete = sum(1 for item in files if not item.get('missing'))
+        missing_items = sum(len(item.get('missing') or []) for item in files)
+        detail = '%d 个课次反馈（三项齐全 %d · 有缺失 %d）%s' % (
+            len(files), complete, len(files) - complete,
+            ' · %d 个读取失败' % len(failed) if failed else '')
+        self.feedback_progress.complete(
+            '反馈文件导出完成', detail,
+            hint='保存位置即将打开，可继续勾选其他课次')
+        self.status.set('反馈文件导出完成：%d 个课次反馈%s' % (
+            len(files), '，%d 个失败' % len(failed) if failed else ''))
+        self.append_log('', target='feedback')
+        self.append_log('===== 反馈文件导出汇总（用时 %ss）====='
+                        % payload.get('elapsed', '-'), target='feedback')
         for content in files:
-            flag = '' if content.get('complete', True) else '（人数不足！）'
-            self.append_log('    %s（%d 名学生）%s'
-                            % (Path(content.get('path', '')).name,
-                               content.get('rows', 0), flag),
-                            target='homework')
+            missing = content.get('missing') or []
+            unselected = content.get('unselected') or []
+            state = '三项齐全' if not missing else '暂时缺失：%s' % '、'.join(
+                str(item) for item in missing)
+            if unselected:
+                state += ' · 未选择：%s' % '、'.join(
+                    str(item) for item in unselected)
+            self.append_log(
+                '    [%s] %s（%s，共 %d 行）' % (
+                    content.get('group') or '-',
+                    Path(content.get('path', '')).name, state,
+                    content.get('rows', 0)),
+                target='feedback')
         if failed:
-            self.append_log('失败 %d 个：%s' % (
+            self.append_log('读取失败 %d 项：%s' % (
                 len(failed), '、'.join(str(x.get('title')) for x in failed)),
-                target='homework')
+                target='feedback')
         out_root = Path(payload.get('out_root') or '')
         if out_root.is_dir():
-            self.append_log('保存位置：%s' % out_root, target='homework')
+            self.append_log('保存位置：%s' % out_root, target='feedback')
             try:
                 open_path(out_root)
             except OSError:
                 pass
-        self._refresh_homework_state()
+        self._refresh_feedback_state()
+
+    # ---------- 更新检查 ----------
+    def on_check_update(self) -> None:
+        """设置里的「一键更新」入口：沿用原有更新检查逻辑。"""
+
+        if self._update_busy:
+            return
+        self._update_busy = True
+        self._set_update_controls('检查中…', 'disabled')
+        self.settings_update_status.set('正在检查更新…')
+        self.status.set('正在检查更新…')
+        self.worker = threading.Thread(
+            target=self._update_check_work, daemon=True)
+        self.worker.start()
+
+    def _update_check_work(self) -> None:
+        try:
+            result = check_for_update(APP_VERSION)
+        except Exception as error:  # noqa: BLE001
+            result = {
+                'status': 'error',
+                'current': APP_VERSION,
+                'message': str(error),
+            }
+        self._post('update_checked', result)
+
+    def _finish_update_check(self, payload) -> None:
+        self._update_busy = False
+        self._set_update_controls('一键更新', 'normal')
+        if not isinstance(payload, dict):
+            payload = {'status': 'error', 'message': '更新检查返回格式不正确。'}
+        status = payload.get('status')
+        if status == 'update':
+            self.settings_update_status.set(
+                '发现新版本 v%s，可在弹窗里打开下载页。'
+                % payload.get('latest'))
+            self.status.set('发现新版本 v%s（当前 v%s）。'
+                            % (payload.get('latest'), payload.get('current')))
+        elif status == 'latest':
+            self.settings_update_status.set(
+                '当前已是最新版本 v%s。' % payload.get('current'))
+            self.status.set('当前已是最新版本 v%s。' % payload.get('current'))
+        else:
+            self.settings_update_status.set(
+                '检查失败：%s' % (payload.get('message') or '无法连接更新服务器'))
+            self.status.set('检查更新失败。')
+        self._show_update_result(payload)
+
+    def _show_update_result(self, result: dict) -> None:
+        status = str(result.get('status') or 'error')
+        current = str(result.get('current') or APP_VERSION)
+        latest = str(result.get('latest') or '')
+        download = str(result.get('download_url') or '')
+        server = str(result.get('server_url') or '')
+        notes = str(result.get('notes') or '').strip()
+
+        win = tk.Toplevel(self.root)
+        win.title('检查更新')
+        win.configure(bg=BG)
+        win.transient(self.root)
+        win.resizable(False, False)
+        try:
+            win.iconphoto(True, *getattr(self, '_window_icons', []))
+            if sys.platform == 'win32' and getattr(
+                    self, '_theme_icon_path', ''):
+                win.iconbitmap(self._theme_icon_path)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            win.grab_set()
+        except Exception:  # noqa: BLE001
+            pass
+        body = ttk.Frame(win, padding=(self.px(18), self.px(16)))
+        body.pack(fill=BOTH, expand=True)
+
+        if status == 'update':
+            ttk.Label(body, text='发现新版本', style='SectionSmall.TLabel').pack(
+                anchor='w')
+            ttk.Label(body, text='最新版本：v%s' % latest,
+                      style='Muted.TLabel').pack(anchor='w', pady=(8, 2))
+            ttk.Label(body, text='当前版本：v%s' % current,
+                      style='Faint.TLabel').pack(anchor='w')
+            if notes:
+                text = tk.Text(body, width=48, height=min(8, max(2,
+                                  notes.count('\n') + 1)),
+                               wrap='word', bg=CARD, fg=TEXT_DARK,
+                               relief='solid', bd=1, padx=self.px(8),
+                               pady=self.px(6), font=(FONT, 10))
+                text.insert('1.0', notes)
+                text.configure(state='disabled')
+                text.pack(fill=X, pady=(10, 0))
+        elif status == 'latest':
+            ttk.Label(body, text='已是最新版本',
+                      style='SectionSmall.TLabel').pack(anchor='w')
+            ttk.Label(body, text='当前版本：v%s' % current,
+                      style='Muted.TLabel').pack(anchor='w', pady=(8, 0))
+            ttk.Label(body, text='暂时没有需要更新的内容。',
+                      style='Faint.TLabel').pack(anchor='w', pady=(4, 0))
+        else:
+            ttk.Label(body, text='检查更新失败',
+                      style='SectionSmall.TLabel').pack(anchor='w')
+            detail = str(result.get('message') or '无法连接更新服务器。')
+            ttk.Label(body, text=detail, style='Muted.TLabel',
+                      wraplength=self.px(440), justify=LEFT).pack(
+                          anchor='w', pady=(8, 0))
+
+        actions = ttk.Frame(body)
+        actions.pack(fill=X, pady=(16, 0))
+
+        ttk.Button(actions, text='关闭', style='Secondary.TButton',
+                   command=win.destroy).pack(side=RIGHT)
+        target_url = download or server
+        if status == 'update' and target_url:
+            def open_download() -> None:
+                try:
+                    webbrowser.open(target_url)
+                    self.status.set('已打开更新下载页。')
+                except Exception as error:  # noqa: BLE001
+                    messagebox.showwarning(APP_NAME, '打开下载页失败：%s' % error)
+            ttk.Button(actions, text='打开下载页', style='Primary.TButton',
+                       command=open_download).pack(
+                           side=RIGHT, padx=(0, self.px(8)))
+
+        win.update_idletasks()
+        x = self.root.winfo_rootx() + max(
+            0, (self.root.winfo_width() - win.winfo_reqwidth()) // 2)
+        y = self.root.winfo_rooty() + max(
+            0, (self.root.winfo_height() - win.winfo_reqheight()) // 3)
+        win.geometry('+%d+%d' % (x, y))
+        try:
+            win.lift()
+            win.focus_force()
+        except Exception:  # noqa: BLE001
+            pass
 
     def on_close(self) -> None:
         if self.busy.get():
@@ -2981,12 +4871,12 @@ class App:
     # ---------- 工具 ----------
     def set_busy(self, busy: bool) -> None:
         self.busy.set(busy)
-        # 邀请码按钮的文字只跟着「邀请码导出」自己走；板书在跑时不能显示
+        # 邀请码按钮的文字只跟着「邀请码导出」自己走；其他页在跑时不能显示
         # 「正在导出…」，否则用户会以为邀请码功能也在导出。
         self.export_button.configure(
             state='disabled' if busy else 'normal',
             text='正在导出…' if self.invite_running else '导出邀请码 Excel')
-        show_note = busy and self._busy_kind in ('board', 'login', 'homework')
+        show_note = busy and self._busy_kind in ('board', 'login', 'feedback')
         if show_note and not self.invite_busy_note.winfo_manager():
             self.invite_busy_note.pack(
                 anchor='w', pady=(self.px(8), 0),
@@ -3001,14 +4891,14 @@ class App:
 
     def _log_panel(self, target=None):
         panels = {'invite': self.invite_log, 'board': self.board_log,
-                  'homework': self.homework_log}
+                  'feedback': self.feedback_log}
         if target not in panels:
             if self._busy_kind == 'invite':
                 target = 'invite'
             elif self._busy_kind in ('board', 'login'):
                 target = 'board'
-            elif self._busy_kind == 'homework':
-                target = 'homework'
+            elif self._busy_kind == 'feedback':
+                target = 'feedback'
             else:
                 target = self.view
         return panels.get(target, self.board_log)
@@ -3031,17 +4921,9 @@ class App:
                 pass
 
     def show_help(self) -> None:
-        if sys.platform == 'darwin':
-            mac_note = (
-                'macOS 说明：由于系统权限限制，需要关闭并重新打开爱问云，'
-                '仅在本机 127.0.0.1:9222 开启调试端口读取登录态；'
-                '导出完成后建议正常重启一次关闭端口。\n\n')
-        else:
-            mac_note = (
-                'Windows 说明：免重启、不开调试端口，只读扫描客户端内存。\n\n')
         messagebox.showinfo(
             APP_NAME,
-            '顶部用「邀请码导出 / 板书导出」两个标签页分开使用。\n\n'
+            '顶部用「邀请码导出 / 板书导出 / 反馈文件导出」三个标签页分开使用。\n\n'
             '【邀请码导出】\n\n'
             '1. 打开并登录爱问云（老师账号），点「导出邀请码 Excel」。\n\n'
             '2. 工具读取登录态，自动拉取「实时课堂」，并发读取邀请码，'
@@ -3052,24 +4934,34 @@ class App:
             '复用它的登录态，不需要账号密码，也不会把电脑客户端挤下线。\n\n'
             '2. 检测不到时才需要账号密码登录（密码只在本进程内存中使用，'
             '不写日志、不落盘）。注意：同一账号登录可能使电脑上的爱问云下线。\n\n'
-            '3. 选时间段（全部 / 今天 / 最近 7 天 / 30 天 / 一个季度 / 自定义），'
-            '切换后会自动列出该时段的课堂清单。班级以爱问云官方班级为准：'
-            'β1、β2、β3、α1 等分组会合并成同一个班，例如「2026027MA+31」；'
-            '匹配不到班级的条目统一放在「杂项/未分类」；列表按时间倒序，最新在上。\n\n'
-            '4. 点整行勾选要导出的课；「全选」选中全部；点班级行可整组勾选。'
-            '每个班级行右侧的「收起 / 展开」用于折叠班级，右上角按钮可一次'
-            '折叠或展开全部班级。\n\n'
+            '3. 选时间段（今天 / 最近 7 天 / 30 天 / 一个季度 / 一年 / 三年 / '
+            '全部 / 自定义），切换后会自动列出该时段的课堂清单。班级按'
+            '「学期 + 班级」显示，例如「26秋7MA+31」「25暑7MAA12」：'
+            '官方班级里的 202602 编码会还原成「26秋」，β1、β2、β3、α1 等'
+            '分组会合并成同一个班；匹配不到班级的条目统一放在「杂项/未分类」；'
+            '列表按时间倒序，最新在上。\n\n'
+            '4. 点整行勾选要导出的课；「全选」勾选当前班级。班级按钮上带学期，'
+            '窗口放不下的班收进右侧「更多」里，点「更多」按学期分组选择；'
+            '勾选别的班不会丢掉已经勾好的课。\n\n'
             '5. 点「导出所选板书」时只导出勾选项，未勾选会被拦截，不会回退为'
-            '全量导出；随后弹出保存位置。PDF 按班级分文件夹，文件名与课堂名一致。'
+            '全量导出；随后弹出保存位置。PDF 按「学期+班级」分文件夹'
+            '（如「26秋7MA+31」），文件名与课堂名一致。'
             '排序可选「按上课顺序」或「按板书类型」。\n\n'
-            '6. 导出进度显示在板书页内：总百分比、已完成节数、当前课堂页数和'
-            '已用时间，都在列表上方，旁边有「取消」。多节课会并行导出，'
-            '可折叠班级查看，不会中断。\n\n'
-            '7. 两个功能的运行日志彼此独立：邀请码日志在邀请码页底部；'
+            '6. 导出时右下角弹出进度卡片：总百分比、当前第几节、当前课堂的'
+            '第几页、已用时间和预计剩余时间，旁边有「取消」。完成后显示'
+            '「100%」并自动收起；失败或取消也会停留几秒说明原因后自动收起。'
+            '多节课会并行导出，不会中断。\n\n'
+            '7. 三个功能的运行日志彼此独立：邀请码日志在邀请码页底部；'
             '板书日志在班级列表下方，默认收起，右侧显示未读条数，点「展开」'
-            '查看；导出结束或出错时会自动展开。\n\n'
+            '查看；导出结束或出错时会自动展开。反馈日志在反馈页底部。\n\n'
+            '【反馈文件导出】\n\n'
+            '连上登录态后自动列出所选时间段的课堂和作业，按班级分组并按时间'
+            '排序。勾选后点「导出所选反馈」：课堂生成与爱问云「历史课堂权限」'
+            '一致的学生统计 CSV，作业生成原有成绩明细 CSV；两者按班级分文件夹。'
+            '课堂 CSV 包含出勤、学习/直播/互动时长、签到、随堂测、积分、举手、'
+            '观看历史课堂、进入/离开时间等字段。\n\n'
             '安全说明：token / 密码只在本进程内存中使用，不写日志、不落盘；'
-            '只向 HTTPS 爱问云业务主机发请求。\n\n' + mac_note)
+            '只向 HTTPS 爱问云业务主机发请求。\n\n')
 
     def run(self) -> None:
         self.root.mainloop()
@@ -3092,15 +4984,14 @@ def main() -> int:
         return 0
 
     if '--smoke-test' in sys.argv:
-        # CI 用：验证打包后的 .app / exe 能加载 Tkinter、openpyxl 和业务模块。
+        # CI 用：验证打包后的 .app / exe 能加载 Tkinter 和业务模块。
         import tkinter
-        from openpyxl import Workbook  # noqa: F401
         import analyze  # noqa: F401
         import banshu_export  # noqa: F401
+        import feedback_export  # noqa: F401
         import login  # noqa: F401
-        import matrix  # noqa: F401
-        from net import _ssl_context
         import pipeline  # noqa: F401
+        from net import _ssl_context
         if banshu_export.PilImage is None:
             raise SystemExit('Pillow missing: board export needs Pillow')
         if sys.platform == 'darwin':

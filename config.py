@@ -18,6 +18,15 @@ from urllib.parse import urlparse
 
 APP_NAME = '爱问云集成工具'
 APP_VERSION = '2.2.0'
+# 爱问云客户端资源版本/完整版本：登录请求头与设备信息共用。
+# 客户端升级后可在这里更新，也可用环境变量临时覆盖，避免直接改代码。
+CLIENT_VERSION = (
+    os.environ.get('AIWENYUN_CLIENT_VERSION', '').strip() or '5.73.370')
+CLIENT_VERSION_FULL = (
+    os.environ.get('AIWENYUN_CLIENT_VERSION_FULL', '').strip()
+    or '24.8.8_5.73.370')
+# 客户端检查更新固定请求这个下载页；不要在界面或运行时改写。
+UPDATE_URL = 'https://jokerx.top/projects/software/aiwenyun/'
 DEFAULT_BASE_URL = 'https://www.aiwenyun.cn/'
 CLIENT_EXE = 'ai-yxt.exe'
 CREATE_NO_WINDOW = 0x08000000
@@ -48,6 +57,9 @@ USER_AGENT = (
 
 BASE_URL_ENV = 'AIWENYUN_BASE_URL'
 OUTPUT_DIR_ENV = 'AIWENYUN_OUTPUT_DIR'
+
+# 只保存界面偏好（当前是主题），不保存 token / 密码。
+SETTINGS_DIR_ENV = 'AIWENYUN_SETTINGS_DIR'
 
 _URL_RE = re.compile(r'https://[A-Za-z0-9.-]+(?::\d+)?')
 
@@ -166,6 +178,52 @@ def normalize_base_url(value: str) -> str | None:
         netloc += ':%d' % parsed.port
     path = parsed.path.rstrip('/')
     return 'https://%s%s/' % (netloc, path)
+
+
+def settings_file() -> Path:
+    """界面偏好文件：优先 %APPDATA%，否则放到用户主目录。"""
+
+    env = (os.environ.get(SETTINGS_DIR_ENV) or '').strip()
+    if env:
+        folder = Path(env).expanduser()
+    elif sys.platform == 'win32' and os.environ.get('APPDATA'):
+        folder = Path(os.environ['APPDATA']) / APP_NAME
+    else:
+        folder = Path.home() / '.config' / 'aiwenyun-tools'
+    return folder / 'settings.json'
+
+
+def load_settings() -> dict:
+    try:
+        payload = json.loads(settings_file().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def save_settings(payload: dict) -> None:
+    """原子写入界面偏好；失败时静默，不打断导出任务。"""
+
+    target = settings_file()
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temp = target.with_suffix('.tmp')
+        temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                        encoding='utf-8')
+        temp.replace(target)
+    except OSError:
+        pass
+
+
+def load_ui_theme(default: str = 'light') -> str:
+    value = str(load_settings().get('theme') or '').strip()
+    return value or default
+
+
+def save_ui_theme(theme: str) -> None:
+    payload = load_settings()
+    payload['theme'] = str(theme or 'light')
+    save_settings(payload)
 
 
 def output_folder() -> Path:

@@ -30,23 +30,24 @@ import ctypes
 import hashlib
 import http.client
 import json
+import os
 import platform
 import re
 import socket
+import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from config import DEFAULT_BASE_URL
+from config import (CLIENT_VERSION, CLIENT_VERSION_FULL, DEFAULT_BASE_URL)
 from net import _ssl_context, redact
 
 LOGIN_PATH = 'custom/usr/doLogin'
 _LOGIN_TIMEOUT = 20.0
+_MAX_LOGIN_RESPONSE_BYTES = 16 * 1024 * 1024
 
-CLIENT_VERSION = '5.73.370'          # SPA 资源版本（响应头 version 同值）
-CLIENT_VERSION_FULL = '24.8.8_5.73.370'   # 客户端完整版本（osInfo 同源）
 USER_AGENT = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
               'AppleWebKit/537.36 (KHTML, like Gecko) ai_client/2.0.0 '
               'Chrome/112.0.5615.204 Electron/24.8.8 Safari/537.36')
@@ -95,31 +96,85 @@ def transform_passwd(text: str) -> str:
 
 # ---------------------------------------------------------------- 设备信息
 
-def client_device_id() -> str:
+def _client_storage_dirs() -> list[Path]:
+    """客户端 Local Storage 的候选目录；只读，不修改客户端数据。"""
+
+    home = Path.home()
+    candidates = [
+        home / 'AppData' / 'Roaming' / 'ai_client' / 'Local Storage' / 'leveldb',
+        home / 'Library' / 'Application Support' / 'ai_client'
+        / 'Local Storage' / 'leveldb',
+    ]
+    return [path for path in candidates if path.is_dir()]
+
+
+def _device_id_file() -> Path:
+    """稳定备用设备 ID 的保存位置（不写安装目录）。"""
+
+    if sys.platform == 'darwin':
+        base = Path.home() / 'Library' / 'Application Support'
+    elif os.name == 'nt':
+        base = Path(os.environ.get('APPDATA') or Path.home())
+    else:
+        base = Path(os.environ.get('XDG_CONFIG_HOME') or
+                    Path.home() / '.config')
+    return base / 'aiwenyun-tools' / 'device-id.txt'
+
+
+def _read_client_device_id() -> str:
     """从本机爱问云客户端 Local Storage 只读读取 deviceId（clientUUID）。"""
 
-    storage = (Path.home() / 'AppData' / 'Roaming' / 'ai_client'
-               / 'Local Storage' / 'leveldb')
     utf16 = b'w\x00i\x00n\x00d\x00o\x00w\x00s\x00-\x00'
+    for storage in _client_storage_dirs():
+        try:
+            for file in sorted(storage.glob('*')):
+                if not file.is_file():
+                    continue
+                data = file.read_bytes()
+                for needle in (b'windows-', utf16):
+                    start = 0
+                    while True:
+                        i = data.find(needle, start)
+                        if i < 0:
+                            break
+                        start = i + 1
+                        window = data[i:i + 140]
+                        match = _DEVICE_ID_RE.search(window)
+                        if match:
+                            return match.group(0).decode('ascii')
+        except OSError:
+            continue
+    return ''
+
+
+def _stable_device_id(path: Path | None = None) -> str:
+    """读不到客户端 deviceId 时，生成并持久化一个稳定值。"""
+
+    target = Path(path) if path is not None else _device_id_file()
     try:
-        for file in sorted(storage.glob('*')):
-            if not file.is_file():
-                continue
-            data = file.read_bytes()
-            for needle in (b'windows-', utf16):
-                start = 0
-                while True:
-                    i = data.find(needle, start)
-                    if i < 0:
-                        break
-                    start = i + 1
-                    window = data[i:i + 140]
-                    match = _DEVICE_ID_RE.search(window)
-                    if match:
-                        return match.group(0).decode('ascii')
+        saved = target.read_text(encoding='ascii').strip()
+    except (OSError, UnicodeError):
+        saved = ''
+    if _DEVICE_ID_RE.fullmatch(saved.encode('ascii', 'ignore')):
+        return saved
+    generated = 'windows-%s' % uuid.uuid4()
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temp = target.with_name('.%s.tmp%s' % (target.stem, target.suffix))
+        temp.write_text(generated, encoding='ascii')
+        temp.replace(target)
     except OSError:
         pass
-    return 'windows-%s' % uuid.uuid4()
+    return generated
+
+
+def client_device_id(path: Path | None = None) -> str:
+    """优先客户端真实 deviceId；取不到时复用持久化的稳定 ID。"""
+
+    found = _read_client_device_id()
+    if found:
+        return found
+    return _stable_device_id(path)
 
 
 def _total_ram_gb() -> str:
@@ -206,7 +261,7 @@ def _post_json(base_url: str, path: str, payload: dict[str, Any],
         connection.request('POST', request_path, body=body, headers=headers)
         response = connection.getresponse()
         status = response.status
-        raw = response.read()
+        raw = response.read(_MAX_LOGIN_RESPONSE_BYTES + 1)
     except OSError as error:
         raise LoginError('登录请求失败（网络）：%s' % scrub(error)) from error
     finally:
@@ -214,6 +269,8 @@ def _post_json(base_url: str, path: str, payload: dict[str, Any],
 
     if status != 200:
         raise LoginError('登录接口返回 HTTP %d' % status)
+    if len(raw) > _MAX_LOGIN_RESPONSE_BYTES:
+        raise LoginError('登录响应过大，已拒绝。')
     try:
         result = json.loads(raw.decode('utf-8-sig'))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:

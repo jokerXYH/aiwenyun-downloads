@@ -7,6 +7,7 @@ pyinstaller --noconfirm --clean --onefile --windowed ^
   --name "爱问云集成工具" ^
   --icon app.ico ^
   --add-data "app.ico;." ^
+  --add-data "assets;assets" ^
   --paths . ^
   --exclude-module numpy ^
   --exclude-module lxml ^
@@ -25,9 +26,14 @@ pyinstaller --noconfirm --clean --onefile --windowed ^
   --hidden-import config ^
   --hidden-import login ^
   --hidden-import banshu_export ^
+  --hidden-import feedback_export ^
   --hidden-import homework_export ^
+  --hidden-import update_checker ^
+  --hidden-import theme_art ^
   --hidden-import PIL ^
   --hidden-import PIL.ImageDraw ^
+  --hidden-import PIL.ImageTk ^
+  --hidden-import PIL._tkinter_finder ^
   --hidden-import certifi ^
   --collect-data certifi ^
   run_gui.py

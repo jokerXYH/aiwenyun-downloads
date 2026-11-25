@@ -90,6 +90,16 @@ GREEK_CHAR = re.compile(r'[Α-Ωα-ω]')
 # 从课堂名兜底识别班级时，只认「26秋7...」这类像班级的前缀
 CLASS_LIKE = re.compile(
     r'^(?:20)?\d{2}(?:春|夏|秋|冬|暑|寒)\d|^\d{4}\d{2}\d')
+# 「26秋」「2026秋」这类学期前缀；分组标签统一压成两位年份
+TERM_PREFIX = re.compile(r'^(?:20)?(\d{2})\s*(春|夏|暑|秋|冬|寒)')
+# 官方班级编码：2026027MA+31 = 2026 年第 02 期（具体季节从课堂名里学）
+OFFICIAL_CODE = re.compile(r'^20(\d{2})(\d{2})')
+# 没有学期文字时按上课月份兜底（7-8 月暑、9-12 月秋、1-2 月寒、3-6 月春）
+_MONTH_SEASON = {1: '寒', 2: '寒', 3: '春', 4: '春', 5: '春',
+                 6: '春', 7: '暑', 8: '暑', 9: '秋', 10: '秋',
+                 11: '秋', 12: '秋'}
+# 学期排序：同一日历年里按 寒→春→暑→秋 的先后；显示时倒序，最新学期在前
+_SEASON_RANK = {'寒': 0, '春': 1, '暑': 2, '秋': 3}
 
 
 class BatchCancelled(RuntimeError):
@@ -112,6 +122,7 @@ def _env_int(name: str, default: int, low: int = 1, high: int = 16) -> int:
 # - genBs 轮询：服务端合成板书通常几秒内完成，原来的 15s 首等太保守。
 CLASS_WORKERS = _env_int('AIWENYUN_BOARD_CLASS_WORKERS', 3, 1, 8)
 PAGE_WORKERS = _env_int('AIWENYUN_BOARD_PAGE_WORKERS', 4, 1, 8)
+LIVE_INFO_WORKERS = _env_int('AIWENYUN_LIVE_INFO_WORKERS', 3, 1, 8)
 PAGE_TIMEOUT = 30
 PAGE_RETRIES = 3
 PDF_ZLIB_LEVEL = 3
@@ -183,6 +194,206 @@ def class_group(short_desc: str) -> str:
 
     raw = (short_desc or '').strip()
     return sanitize(class_base(raw) or raw)
+
+
+def term_label(text: str) -> str:
+    """提取学期标签：26秋7MAA12 → 26秋；2026秋7MAA12 → 26秋。
+
+    只认「年份 + 春/夏/暑/秋/冬/寒」开头的写法；认不出返回空串。
+    """
+
+    value = unicodedata.normalize('NFKC', (text or '').strip())
+    match = TERM_PREFIX.match(value)
+    if not match:
+        return ''
+    return '%s%s' % (match.group(1), match.group(2))
+
+
+def class_short_label(name: str) -> str:
+    """班级按钮/文件夹用的短名：只去掉学期与官方编码，保留「作业班」。
+
+    「2026027MA+31β1」→「7MA+31」；
+    「26秋7MAA12（数形许）」→「7MAA12」；
+    「2026027MA+31作业班」→「7MA+31作业班」（作业班是独立班级，不能抹掉）。
+    """
+
+    value = class_base(name) or (name or '').strip()
+    value = TERM_PREFIX.sub('', value).strip()
+    value = re.sub(r'^20\d{4}', '', value).strip()
+    return value or class_base(name) or (name or '').strip()
+
+
+def class_folder_label(name: str) -> str:
+    """反馈文件用的班级名：去掉学期和「作业班」，让同一班的教学/作业合到一起。
+
+    「2026027MA+31作业班」→「7MA+31」；
+    「26秋7MA+31（数形许）」→「7MA+31」。
+    """
+
+    value = class_short_label(name)
+    for suffix in ('作业班', '班级'):
+        if value.endswith(suffix):
+            value = value[:-len(suffix)].strip()
+    return value or class_short_label(name)
+
+
+def class_output_dir(out_root: Path, group_name: str) -> Path:
+    """班级输出目录；如果用户选的文件夹本身就是这个班，就不再套一层。
+
+    这样选「D:\\导出\\7MA+31」导出时，文件直接落在这个已有文件夹里；
+    选「D:\\导出」这种根目录时，才按班级新建子文件夹。
+    """
+
+    root = Path(out_root)
+    target = sanitize(group_name)
+    folder = class_folder_label(root.name)
+    wanted = class_folder_label(group_name)
+    if folder and wanted and _compact_name(folder) == _compact_name(wanted):
+        return root
+    return root / target
+
+
+def term_from_time(ms: int) -> str:
+    """按上课月份兜底推断学期：2026-11 → 26秋。"""
+
+    if not ms:
+        return ''
+    try:
+        moment = datetime.datetime.fromtimestamp(int(ms) / 1000)
+    except (TypeError, ValueError, OSError):
+        return ''
+    season = _MONTH_SEASON.get(moment.month, '')
+    if not season:
+        return ''
+    return '%02d%s' % (moment.year % 100, season)
+
+
+def official_term_code(name: str) -> tuple[str, str] | None:
+    """官方班级名里的 (两位年份, 期号)：2026027MA+31 → ('26', '02')。"""
+
+    match = OFFICIAL_CODE.match(class_base(name))
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def learned_term_codes(groups: dict[str, list[int]],
+                       records: list[dict]) -> dict[tuple[str, str], str]:
+    """从课堂名里学「官方期号 → 季节」：202602 → 秋。
+
+    官方班级名只有 202602 这种编码，季节靠同一班课堂名里的「26秋」
+    反推。同一期号出现多个季节时取出现次数最多的。
+    """
+
+    votes: dict[tuple[str, str], dict[str, int]] = {}
+    for name, indexes in (groups or {}).items():
+        code = official_term_code(name)
+        if code is None:
+            continue
+        for index in indexes:
+            if not 0 <= index < len(records):
+                continue
+            term = term_label(records[index].get('shortDesc') or '')
+            if not term:
+                continue
+            season = term[2:]
+            seasons = votes.setdefault(code, {})
+            seasons[season] = seasons.get(season, 0) + 1
+    return {code: max(seasons, key=seasons.get)
+            for code, seasons in votes.items()}
+
+
+def group_term_label(name: str, records: list[dict] | None = None,
+                     code_seasons: dict[tuple[str, str], str] | None = None
+                     ) -> str:
+    """一个班级对应的学期标签，优先课堂名，其次记录里的课堂名，再看编码/日期。
+
+    官方班级名「2026027MA+31」本身只有编码，学期优先从同一班课堂名
+    （「26秋7MA+31（数形许）-11」）里取；取不到时用同批数据学到的
+    「202602 → 秋」映射，最后才按最新一节课的月份兜底。
+    同一班跨学期补课时，以出现次数最多的学期为准，平票用最新一节课的学期。
+    """
+
+    direct = term_label(class_base(name))
+    if direct:
+        return direct
+
+    counts: dict[str, int] = {}
+    newest_term, newest_stamp = '', -1
+    for record in records or []:
+        term = term_label(record.get('shortDesc') or '')
+        if not term:
+            continue
+        counts[term] = counts.get(term, 0) + 1
+        stamp = record_time(record)
+        if stamp > newest_stamp:
+            newest_stamp, newest_term = stamp, term
+    if counts:
+        most = max(counts.values())
+        winners = [term for term, count in counts.items() if count == most]
+        if newest_term in winners:
+            return newest_term
+        return max(winners, key=group_sort_key)
+
+    code = official_term_code(name)
+    if code is not None and code_seasons and code in code_seasons:
+        return code[0] + code_seasons[code]
+
+    stamps = [record_time(record) for record in records or []]
+    stamps = [stamp for stamp in stamps if stamp]
+    if stamps:
+        return term_from_time(max(stamps))
+    return ''
+
+
+def group_display_label(name: str,
+                        records: list[dict] | None = None,
+                        code_seasons: dict[tuple[str, str], str] | None = None
+                        ) -> str:
+    """班级在界面/文件夹里的显示名：学期 + 班级，如「26秋7MA+31」。
+
+    认不出学期时退回官方班级名（如「2026027MA+31」），宁可长一点，
+    也不要把两个学期的同名班混成一个。
+    """
+
+    base = class_base(name) or (name or '').strip()
+    term = group_term_label(base, records, code_seasons)
+    if not term:
+        return base
+    return term + class_short_label(base)
+
+
+def group_display_names(groups: dict[str, list[int]],
+                        records: list[dict]) -> dict[str, str]:
+    """把官方班级名映射成「学期+班级」显示名。
+
+    先整批学一次「官方期号 → 季节」，再逐班生成显示名；万一两个官方班
+    压出同一个显示名（例如官方名与课堂名兜底名重复），这些班退回官方
+    全名，保证按钮和导出文件夹不会混在一起。
+    """
+
+    code_seasons = learned_term_codes(groups, records)
+    labels: dict[str, str] = {}
+    for name, indexes in (groups or {}).items():
+        rows = [records[index] for index in indexes
+                if 0 <= index < len(records)]
+        labels[name] = group_display_label(name, rows, code_seasons)
+    counts: dict[str, int] = {}
+    for label in labels.values():
+        counts[label] = counts.get(label, 0) + 1
+    for name, label in list(labels.items()):
+        if counts.get(label, 0) > 1:
+            labels[name] = class_base(name) or name
+    return labels
+
+
+def group_sort_key(label: str) -> tuple[int, int]:
+    """按「学期」排序：年份大在前；同一年的寒假最早、秋季最晚。"""
+
+    term = term_label(label or '')
+    if not term:
+        return (0, 0)
+    return (int(term[:2]), _SEASON_RANK.get(term[2:], 0))
 
 
 def _normalized_name(text: str) -> str:
@@ -435,12 +646,16 @@ def record_group_names(record: dict) -> list[str]:
 
 
 def enrich_record_groups(session: ApiSession,
-                         records: list[dict]) -> dict[int, list[str]]:
+                         records: list[dict],
+                         on_progress=None,
+                         cancel_event=None) -> dict[int, list[str]]:
     """用 liveInfo 接口给每节板书记录补上官方班级名（只读）。
 
     liveInfo 的 ``groups`` 形如 ``{3874277: '2026027MA+31β1', ...}``，
     这是把「26秋7MA+31」课堂精确对应到「2026027MA+31」班级的可靠来源。
     返回 ``{liveclass: [班级名]}``；接口失败时由调用方决定是否忽略。
+    记录很多（最近三年）时按 50 个一批请求，``on_progress(done, total)``
+    让界面能报出「正在对应官方班级 150 / 600」。
     """
 
     wanted: list[int] = []
@@ -454,7 +669,49 @@ def enrich_record_groups(session: ApiSession,
     if not wanted:
         return {}
 
-    details = session.fetch_live_info(wanted)
+    details: dict[int, dict] = {}
+    total = len(wanted)
+    chunks = [wanted[start:start + 50]
+              for start in range(0, total, 50)]
+    if cancel_event is not None and cancel_event.is_set():
+        raise BatchCancelled('已取消列出板书。')
+
+    if len(chunks) <= 1 or LIVE_INFO_WORKERS <= 1:
+        done = 0
+        for chunk in chunks:
+            if cancel_event is not None and cancel_event.is_set():
+                raise BatchCancelled('已取消列出板书。')
+            details.update(session.fetch_live_info(chunk))
+            done += len(chunk)
+            if on_progress is not None:
+                try:
+                    on_progress(done, total)
+                except Exception:  # noqa: BLE001
+                    pass
+    else:
+        pool = ThreadPoolExecutor(
+            max_workers=min(LIVE_INFO_WORKERS, len(chunks)),
+            thread_name_prefix='liveinfo')
+        futures = [pool.submit(session.fetch_live_info, chunk)
+                   for chunk in chunks]
+        done = 0
+        try:
+            for chunk, future in zip(chunks, futures):
+                if cancel_event is not None and cancel_event.is_set():
+                    raise BatchCancelled('已取消列出板书。')
+                details.update(future.result())
+                done += len(chunk)
+                if on_progress is not None:
+                    try:
+                        on_progress(done, total)
+                    except Exception:  # noqa: BLE001
+                        pass
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
     mapping: dict[int, list[str]] = {}
     for liveclass, info in (details or {}).items():
         groups = (info or {}).get('groups') or {}
@@ -538,6 +795,26 @@ def record_group_base(record: dict,
     return class_base(matched) if matched else ''
 
 
+def record_matches_class_list(record: dict,
+                              class_names: list[str] | None) -> bool:
+    """课堂班级代号是否落在用户班级列表里；列表为空时不筛选。
+
+    只复用现有归一化规则（学期、α/β 分组、作业班后缀）和
+    ``match_class_name``，不扩展新的班级代号匹配规则。
+    """
+
+    names = _canonical_class_names(class_names)
+    if not names:
+        return True
+    allowed = {class_folder_label(name) for name in names if name}
+    candidates = list(record_group_names(record))
+    candidates.append(class_group(record.get('shortDesc') or ''))
+    for candidate in candidates:
+        if candidate and class_folder_label(candidate) in allowed:
+            return True
+    return bool(match_class_name(record.get('shortDesc') or '', names))
+
+
 def group_board_records(records: list[dict],
                         class_names: list[str] | None = None
                         ) -> dict[str, list[int]]:
@@ -580,15 +857,26 @@ def sort_records_newest_first(records: list[dict]) -> list[dict]:
 
 
 def ordered_group_names(groups: dict[str, list[int]],
-                        records: list[dict]) -> list[str]:
-    """班级顺序：最新一节课的班排前面；杂项永远最后。"""
+                        records: list[dict],
+                        labels: dict[str, str] | None = None) -> list[str]:
+    """班级顺序：先按学期（26秋 → 26暑 → 25秋…），同学期最新一节课的班在前；
+    杂项永远最后。
+
+    ``labels`` 是可选的「官方班级名 → 显示名」映射；给了就按显示名里的
+    学期排序，没给则退回原来的「最新一节课」排序。
+    """
+
+    labels = labels or {}
 
     def latest(indexes: list[int]) -> int:
         return max((record_time(records[index]) for index in indexes
                     if 0 <= index < len(records)), default=0)
 
     official = [name for name in groups if name != UNCLASSIFIED_GROUP]
-    official.sort(key=lambda name: (-latest(groups[name]), name))
+    official.sort(
+        key=lambda name: (group_sort_key(labels.get(name, name)),
+                          latest(groups[name]), name),
+        reverse=True)
     if UNCLASSIFIED_GROUP in groups:
         official.append(UNCLASSIFIED_GROUP)
     return official
@@ -715,13 +1003,20 @@ def http_get(url: str, timeout: int = 60, retries: int = 3,
 
 
 def fetch_records(session: ApiSession, date_from_ms: int, date_to_ms: int,
-                  page_size: int = 50) -> list[dict]:
-    """分页拉取一个时间段的全部历史课堂记录。"""
+                  page_size: int = 50,
+                  cancel_event=None) -> list[dict]:
+    """分页拉取一个时间段的全部历史课堂记录。
+
+    最近三年/全部可能有很多页；给了 ``cancel_event`` 就在每页之间检查，
+    用户点「取消」后不必等剩下所有页拉完。
+    """
 
     rows: list[dict] = []
     index = 0
     total = None
     while True:
+        if cancel_event is not None and cancel_event.is_set():
+            raise BatchCancelled('已取消列出板书。')
         resp = session.post(LIST_RECORD, {
             'dateFrom': int(date_from_ms), 'dateTo': int(date_to_ms),
             'indexStart': index, 'pageSize': page_size,
@@ -1196,7 +1491,8 @@ def export_class(session: ApiSession, record: dict, out_root: Path,
     if cancel_event is not None and cancel_event.is_set():
         raise BatchCancelled('已取消板书导出。')
 
-    group = out_root / sanitize(group_name or class_group(short_desc))
+    group = class_output_dir(
+        out_root, group_name or class_group(short_desc))
     # 文件名只保留课堂名；同批里出现重名才加「（2）」，不挂课堂编号
     index = int(record.get('_nameIndex') or 1)
     stem = sanitize(short_desc)
@@ -1515,7 +1811,8 @@ def run_board_export(session: ApiSession, out_root: Path, sort_mode: str,
 
 # ---------------------------------------------------------------- 时间段预设
 
-RANGE_PRESETS = ('全部', '今天', '最近7天', '最近30天', '最近一个季度', '自定义')
+RANGE_PRESETS = ('今天', '最近7天', '最近30天', '最近一个季度',
+                 '最近一年', '最近三年', '全部', '自定义')
 _DAY_MS = 86400 * 1000
 
 
@@ -1531,8 +1828,9 @@ def resolve_range(preset: str, custom_from: str = '',
                   custom_to: str = '', now_ms: int | None = None) -> tuple[int, int]:
     """时间段预设 -> (起始毫秒, 结束毫秒)。
 
-    preset: 全部/今天/最近7天/最近30天/最近一个季度/自定义。
-    自定义时 custom_from/custom_to 为 YYYY-MM-DD，结束日取当天 23:59:59。
+    preset: 今天/最近7天/最近30天/最近一个季度/最近一年/最近三年/全部/自定义。
+    「全部」给 10 年上界（服务端只返回实际存在的记录），避免和「最近三年」
+    完全重复；自定义时 custom_from/custom_to 为 YYYY-MM-DD，结束日取当天 23:59:59。
     """
 
     now = int(now_ms if now_ms is not None else time.time() * 1000)
@@ -1544,8 +1842,12 @@ def resolve_range(preset: str, custom_from: str = '',
         return now - 30 * _DAY_MS, now
     if preset == '最近一个季度':
         return now - 92 * _DAY_MS, now
-    if preset == '全部':
+    if preset == '最近一年':
+        return now - 365 * _DAY_MS, now
+    if preset == '最近三年':
         return now - 3 * 365 * _DAY_MS, now
+    if preset == '全部':
+        return now - 10 * 365 * _DAY_MS, now
     # 自定义
     if not custom_from or not custom_to:
         raise ValueError('自定义时间段需要填写开始与结束日期（YYYY-MM-DD）。')

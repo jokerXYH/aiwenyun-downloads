@@ -1,0 +1,1456 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>《走进几何世界》格式体检报告 · 极方数学</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23b3261e'/%3E%3Crect x='7' y='7' width='18' height='18' fill='none' stroke='%23fff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --paper:#f6f2e9;
+    --paper-2:#fbf8f1;
+    --card:#fffdf8;
+    --ink:#1b1a17;
+    --ink-2:#3c3830;
+    --muted:#6f685b;
+    --faint:#948b7b;
+    --line:#e2dacb;
+    --line-2:#d3c8b4;
+    --red:#b3261e;
+    --red-2:#d6472f;
+    --red-soft:#fbece8;
+    --amber:#a35a00;
+    --amber-2:#d08a24;
+    --amber-soft:#fbf1df;
+    --green:#2f6b4f;
+    --green-soft:#eaf3ec;
+    --blue:#2f5d8a;
+    --blue-soft:#eaf0f6;
+    --purple:#6a4a7a;
+    --purple-soft:#f1ecf4;
+    --shadow:0 14px 40px rgba(48,38,20,.08);
+    --shadow-sm:0 4px 16px rgba(48,38,20,.06);
+    --serif:"Songti SC","STSong","SimSun","Noto Serif CJK SC",serif;
+    --sans:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Segoe UI",sans-serif;
+    --mono:"SFMono-Regular","Cascadia Code","Consolas","Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    color:var(--ink);
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #fffdf7 0%, rgba(255,253,247,0) 60%),
+      radial-gradient(900px 500px at 95% 5%, #f1e8d7 0%, rgba(241,232,215,0) 55%),
+      var(--paper);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    z-index:0;
+    opacity:.42;
+    background-image:radial-gradient(rgba(80,65,40,.10) .6px, transparent .6px);
+    background-size:4px 4px;
+    mix-blend-mode:multiply;
+  }
+  a{color:inherit;text-decoration:none}
+  button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+  img{max-width:100%}
+  code{font-family:var(--mono);font-size:.92em;background:#f1eadc;padding:1px 5px;border-radius:4px}
+  ::selection{background:#f2c9bf;color:#231a14}
+  .shell{position:relative;z-index:1;max-width:1240px;margin:0 auto;padding:0 34px}
+
+  /* top bar */
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--red-2);width:0;z-index:80}
+  .topbar{
+    position:sticky;top:0;z-index:60;
+    height:62px;
+    display:flex;align-items:center;
+    background:rgba(246,242,233,.82);
+    backdrop-filter:blur(14px);
+    border-bottom:1px solid rgba(211,200,180,.55);
+  }
+  .topbar .shell{display:flex;align-items:center;gap:26px;width:100%}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.04em;font-size:13px;white-space:nowrap}
+  .brand .mark{width:18px;height:18px;background:var(--red-2);display:inline-block;position:relative;border-radius:2px}
+  .brand .mark:after{content:"";position:absolute;inset:4px;border:1px solid rgba(255,255,255,.85)}
+  .brand span{color:var(--faint);font-weight:500}
+  .nav{display:flex;gap:20px;margin-left:auto;font-size:12.5px;color:var(--muted)}
+  .nav a{position:relative;padding:6px 0}
+  .nav a:hover{color:var(--ink)}
+  .nav a:after{content:"";position:absolute;left:0;right:100%;bottom:0;height:1px;background:var(--red-2);transition:right .25s}
+  .nav a:hover:after{right:0}
+  .print-btn{
+    display:inline-flex;align-items:center;gap:7px;
+    border:1px solid var(--line-2);border-radius:999px;
+    padding:7px 14px;font-size:12px;color:var(--ink-2);
+    transition:.2s background,.2s border-color;
+    white-space:nowrap;
+  }
+  .print-btn:hover{background:var(--card);border-color:var(--ink-2)}
+  .print-btn svg{width:13px;height:13px}
+
+  /* hero */
+  .hero{position:relative;padding:78px 0 54px;overflow:hidden}
+  .hero:after{
+    content:"08";position:absolute;right:-14px;top:22px;
+    font-family:var(--serif);font-weight:700;font-size:clamp(140px,22vw,300px);
+    line-height:.8;color:rgba(60,45,20,.045);letter-spacing:-.06em;pointer-events:none;
+  }
+  .hero-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.8fr);gap:48px;align-items:center;position:relative;z-index:1}
+  .eyebrow{
+    display:flex;align-items:center;gap:10px;
+    font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--red);
+    font-weight:700;
+  }
+  .eyebrow:before{content:"";width:26px;height:1px;background:var(--red-2)}
+  .hero h1{
+    font-family:var(--serif);font-weight:600;
+    font-size:clamp(38px,5.2vw,66px);
+    line-height:1.12;letter-spacing:-.025em;
+    margin:20px 0 18px;
+  }
+  .hero h1 em{font-style:normal;color:var(--red);position:relative;white-space:nowrap}
+  .hero h1 em:after{content:"";position:absolute;left:0;right:-2px;bottom:4px;height:7px;background:rgba(214,71,47,.14);z-index:-1}
+  .lede{max-width:600px;margin:0;color:var(--muted);font-size:14.5px}
+  .file{
+    margin-top:26px;display:flex;gap:12px;align-items:flex-start;
+    font-size:11.5px;color:var(--muted);
+    border-left:2px solid var(--line-2);padding-left:12px;
+    word-break:break-all;
+  }
+  .file b{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--faint);padding-top:2px;white-space:nowrap}
+  .hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}
+  .btn{
+    display:inline-flex;align-items:center;gap:9px;
+    border:1px solid var(--line-2);border-radius:999px;padding:10px 18px;
+    font-size:12.5px;font-weight:600;transition:.2s;
+    background:rgba(255,253,248,.5);
+  }
+  .btn:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+  .btn.primary{background:var(--ink);color:#f9f5eb;border-color:var(--ink)}
+  .btn.primary:hover{background:#000}
+  .btn svg{width:13px;height:13px}
+
+  .score-wrap{display:flex;justify-content:center}
+  .score-card{
+    position:relative;width:100%;max-width:330px;
+    background:linear-gradient(160deg,#fffdf8,#f8f2e5);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:26px 26px 22px;
+    box-shadow:var(--shadow);
+  }
+  .score-top{display:flex;justify-content:space-between;align-items:center;font-size:10px;letter-spacing:.16em;color:var(--faint);font-weight:700}
+  .score-body{position:relative;display:flex;align-items:center;gap:18px;margin:14px 0 6px}
+  .ring{width:132px;height:132px;flex:none;transform:rotate(-90deg)}
+  .ring circle{fill:none;stroke-width:8}
+  .ring .bg{stroke:#e8dfcd}
+  .ring .fg{stroke:url(#scoreGrad);stroke-linecap:round}
+  .score-num{position:absolute;left:0;top:0;width:132px;height:132px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
+  .score-num b{font-family:var(--serif);font-size:46px;font-weight:600;letter-spacing:-.04em}
+  .score-num span{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:6px;letter-spacing:.05em}
+  .score-legend{font-size:12px;color:var(--muted);line-height:1.9}
+  .score-legend b{display:block;font-size:16px;color:var(--ink);font-family:var(--serif);font-weight:600;margin-bottom:4px}
+  .score-legend .bars{margin-top:8px;display:grid;gap:5px}
+  .score-legend .bars div{display:flex;justify-content:space-between;gap:14px}
+  .score-legend .bars i{font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--ink)}
+  .stamp{
+    position:absolute;right:16px;bottom:-13px;transform:rotate(-7deg);
+    border:2px solid var(--red);color:var(--red);
+    padding:6px 10px;font-size:10.5px;font-weight:700;letter-spacing:.14em;
+    background:rgba(255,251,243,.72);border-radius:3px;
+    box-shadow:inset 0 0 0 1px rgba(179,38,30,.25);
+    opacity:.92;
+  }
+
+  /* stats */
+  .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:8px}
+  .stat{padding:22px 18px 20px;border-right:1px solid var(--line);position:relative}
+  .stat:last-child{border-right:0}
+  .stat b{display:block;font-family:var(--serif);font-weight:600;font-size:34px;line-height:1;letter-spacing:-.03em}
+  .stat span{display:block;font-size:11px;color:var(--muted);margin-top:8px;letter-spacing:.03em}
+  .stat i{position:absolute;top:22px;right:18px;width:7px;height:7px;border-radius:50%;background:var(--line-2)}
+  .stat.red b{color:var(--red)}
+  .stat.red i{background:var(--red-2)}
+  .stat.amber b{color:var(--amber)}
+  .stat.amber i{background:var(--amber-2)}
+  .stat.blue b{color:var(--blue)}
+  .stat.blue i{background:var(--blue)}
+
+  /* six-dimension profile */
+  .profile{display:grid;grid-template-columns:200px 1fr;gap:30px;align-items:center;padding:24px 0 6px}
+  .profile-head .k{font-size:9.5px;letter-spacing:.16em;color:var(--red);font-weight:700}
+  .profile-head h3{font-family:var(--serif);font-size:22px;font-weight:600;margin:5px 0 3px;letter-spacing:-.02em}
+  .profile-head p{margin:0;font-size:11px;color:var(--faint);line-height:1.6}
+  .profile-bars{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 26px}
+  .pbar{display:grid;grid-template-columns:64px 1fr 24px;gap:9px;align-items:center;font-size:10.5px;color:var(--muted)}
+  .pbar .track{height:5px;background:#e8dfcd;border-radius:99px;overflow:hidden}
+  .pbar .fill{display:block;height:100%;background:linear-gradient(90deg,#d6472f,#d08a24);border-radius:99px}
+  .pbar b{font-family:var(--mono);font-weight:500;font-size:10px;color:var(--ink);text-align:right}
+
+  /* generic section */
+  section{padding:74px 0 0}
+  section[id]{scroll-margin-top:92px}
+  .sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:30px;margin-bottom:26px}
+  .sec-head .left{max-width:820px}
+  .sec-kicker{font-size:10px;letter-spacing:.18em;color:var(--red);font-weight:700;text-transform:uppercase;margin-bottom:8px}
+  .sec-head h2{font-family:var(--serif);font-weight:600;font-size:clamp(26px,3.2vw,38px);line-height:1.2;letter-spacing:-.02em;margin:0}
+  .sec-head p{margin:10px 0 0;color:var(--muted);font-size:13.5px;max-width:650px}
+  .sec-count{font-family:var(--mono);font-size:11px;color:var(--faint);white-space:nowrap;padding-bottom:6px}
+
+  /* verdict */
+  .verdict-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .verdict-card{
+    position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:24px 24px 22px 28px;overflow:hidden;
+    transition:.25s transform,.25s box-shadow;
+  }
+  .verdict-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
+  .verdict-card:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--red-2)}
+  .verdict-card .big{position:absolute;right:18px;top:10px;font-family:var(--serif);font-size:74px;line-height:1;color:rgba(60,45,20,.055);letter-spacing:-.05em}
+  .verdict-card .tag{display:inline-flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.12em;font-weight:700;color:var(--red)}
+  .verdict-card .tag:before{content:"";width:6px;height:6px;background:var(--red-2);border-radius:50%}
+  .verdict-card h3{font-size:17.5px;line-height:1.45;margin:9px 0 8px;font-weight:700;max-width:92%}
+  .verdict-card p{margin:0;color:var(--muted);font-size:13px;line-height:1.72;max-width:94%}
+  .verdict-card .go{display:inline-flex;align-items:center;gap:6px;margin-top:13px;font-size:11.5px;font-weight:600;color:var(--ink-2);border-bottom:1px solid var(--line-2);padding-bottom:2px}
+  .verdict-card .go:hover{color:var(--red);border-color:var(--red)}
+  .verdict-card.p0{background:linear-gradient(180deg,#fdf6f3,#fffdf8 65%)}
+
+  /* evidence */
+  .evidence-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+  .ev{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;position:relative;overflow:hidden}
+  .ev.a{grid-column:span 7}
+  .ev.b{grid-column:span 5}
+  .ev.c{grid-column:span 5}
+  .ev.d{grid-column:span 7}
+  .ev header{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .ev header .tag{font-size:9.5px;letter-spacing:.12em;font-weight:700;color:var(--faint);border:1px solid var(--line-2);padding:3px 7px;border-radius:3px;white-space:nowrap}
+  .ev h3{font-size:16px;margin:0;font-weight:700;line-height:1.4}
+  .ev p{margin:12px 0 0;font-size:12.5px;color:var(--muted);line-height:1.72}
+  .ev p b{color:var(--ink);font-weight:600}
+  .ev .foot{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);font-size:11.5px;color:var(--muted)}
+  .mock-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
+  .mock{
+    border:1px solid var(--line);background:#fff;border-radius:8px;padding:13px 14px;
+    box-shadow:0 2px 0 rgba(60,45,20,.03);
+    position:relative;
+  }
+  .mock .mh{font-family:var(--serif);font-size:13px;letter-spacing:.01em;display:flex;gap:6px;flex-wrap:wrap;align-items:baseline;border-bottom:1px solid #eee6d7;padding-bottom:9px}
+  .mock .mh b{font-weight:700;border-bottom:2px solid transparent;padding-bottom:1px}
+  .mock .ml{font-size:10.5px;color:var(--faint);margin-top:9px;letter-spacing:.02em}
+  .mock .verdict{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:10.5px;font-weight:600}
+  .mock.good{border-color:#cfe0d3;background:#fbfdf9}
+  .mock.good b{color:var(--green);border-color:#b9d3bf}
+  .mock.good .verdict{color:var(--green)}
+  .mock.bad{border-color:#efc9c1;background:#fffaf8}
+  .mock.bad b{color:var(--red);border-color:#e3a99e;background:#fbe9e5}
+  .mock.bad .verdict{color:var(--red)}
+  .occur{display:flex;flex-wrap:wrap;gap:5px;margin-top:14px;align-items:center}
+  .occur i{display:block;width:17px;height:22px;background:#f6d8d2;border:1px solid #e3a99e;border-radius:2px;position:relative}
+  .occur i:after{content:"十";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:9px;color:var(--red);opacity:.55}
+  .occur span{font-size:10.5px;color:var(--muted);margin-left:6px;font-family:var(--mono)}
+  .mini-table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px}
+  .mini-table th,.mini-table td{border:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:middle}
+  .mini-table th{background:#f4eee2;font-weight:600;font-size:10.5px;color:var(--muted);letter-spacing:.02em}
+  .mini-table td.k{width:34px;text-align:center;color:var(--muted);background:#fbf7ee}
+  .mini-table tr.bad td{background:var(--red-soft)}
+  .mini-table tr.bad td b{color:var(--red)}
+  .mini-table tr.good td{background:var(--green-soft)}
+  .mini-table tr.good td b{color:var(--green)}
+  .mini-table b{font-weight:700}
+  .split2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .split2 h4{margin:0 0 6px;font-size:10.5px;letter-spacing:.08em;color:var(--faint);font-weight:700}
+  .stepper{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .step{font-size:10.5px;border:1px solid var(--line);padding:5px 9px;border-radius:4px;background:#fff;color:var(--muted);white-space:nowrap}
+  .step b{color:var(--ink);font-weight:600}
+  .step.dup{border-color:#e3a99e;background:var(--red-soft);color:var(--red);font-weight:600}
+  .arrow{color:var(--line-2);font-family:var(--mono);font-size:10px}
+  .step-lab{display:flex;gap:14px;margin-top:8px;font-size:10.5px;color:var(--faint)}
+  .step-lab i{font-style:normal;color:var(--red)}
+  .ghost-lines{display:grid;gap:7px;margin-top:4px}
+  .gl{font-size:11.5px;line-height:1.6;padding:6px 9px;border-left:2px solid var(--line-2);color:var(--muted);background:#fbf7ee}
+  .gl.miss{border-left-color:var(--red-2);background:var(--red-soft);color:var(--red);border-top:1px dashed #e3a99e;border-right:1px dashed #e3a99e;border-bottom:1px dashed #e3a99e}
+  .gl b{font-weight:700}
+  .chips6{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
+  .chips6 span{font-family:var(--mono);font-size:10px;border:1px solid var(--line-2);padding:2px 6px;border-radius:3px;color:var(--ink-2);background:#fff}
+
+  /* page grid */
+  .page-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:15px}
+  .page-card{
+    text-align:left;background:var(--card);border:1px solid var(--line);border-top:3px solid var(--line-2);
+    border-radius:10px;padding:7px 7px 9px;transition:.22s transform,.22s box-shadow;
+    position:relative;
+  }
+  .page-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-sm)}
+  .page-card.sev-p0{border-top-color:var(--red-2)}
+  .page-card.sev-p1{border-top-color:var(--amber-2)}
+  .page-card.sev-p2{border-top-color:var(--blue)}
+  .page-card.sev-none{border-top-color:#b9d3bf}
+  .page-thumb{position:relative;background:#fff;border:1px solid #e7e0d2;overflow:hidden}
+  .page-thumb img{display:block;width:100%;height:auto}
+  .page-thumb .count{
+    position:absolute;top:5px;right:5px;min-width:20px;height:20px;padding:0 5px;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--ink);color:#fff;font-family:var(--mono);font-size:10px;border-radius:999px;
+  }
+  .page-card.sev-p0 .count{background:var(--red-2)}
+  .page-card.sev-p1 .count{background:var(--amber-2)}
+  .page-card.sev-p2 .count{background:var(--blue)}
+  .page-thumb .count.ok{background:#eaf3ec;color:var(--green);font-size:11px}
+  .page-thumb .dot{position:absolute;width:7px;height:7px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(40,30,10,.18);transform:translate(-50%,-50%)}
+  .page-thumb .dot.p0{background:var(--red-2)}
+  .page-thumb .dot.p1{background:var(--amber-2)}
+  .page-thumb .dot.p2{background:var(--blue)}
+  .page-meta{display:flex;align-items:center;gap:7px;margin-top:8px;padding:0 2px;min-width:0}
+  .page-meta .pnum{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--ink);letter-spacing:.04em}
+  .page-meta .plabel{font-size:10px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:16px}
+  .legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+  .legend .l0{background:var(--red-2)}.legend .l1{background:var(--amber-2)}.legend .l2{background:var(--blue)}.legend .l3{background:#b9d3bf}
+  .global-note{
+    display:flex;align-items:center;gap:10px;margin-bottom:14px;
+    border:1px solid #efc9c1;background:var(--red-soft);border-radius:8px;padding:9px 13px;
+    font-size:11.5px;color:var(--red);
+  }
+  .global-note b{font-weight:700}
+  .global-note .pin{width:7px;height:7px;border-radius:50%;background:var(--red-2);flex:none;box-shadow:0 0 0 3px rgba(214,71,47,.14)}
+
+  /* issues */
+  .toolbar{
+    position:sticky;top:62px;z-index:30;
+    background:rgba(246,242,233,.92);backdrop-filter:blur(12px);
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+    padding:11px 0;margin-bottom:22px;
+  }
+  .toolbar-inner{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{
+    border:1px solid var(--line-2);border-radius:999px;padding:5px 11px;
+    font-size:11px;color:var(--ink-2);background:rgba(255,253,248,.4);
+    transition:.18s;white-space:nowrap;
+  }
+  .chip:hover{border-color:var(--ink-2)}
+  .chip.active{background:var(--ink);color:#fbf7ee;border-color:var(--ink)}
+  .chip span{font-family:var(--mono);font-size:9.5px;opacity:.62;margin-left:4px}
+  .search-wrap{position:relative;margin-left:auto;min-width:220px;flex:1;max-width:300px}
+  .search-wrap svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);width:13px;height:13px;color:var(--faint)}
+  .search{
+    width:100%;border:0;border-bottom:1px solid var(--line-2);background:transparent;
+    padding:7px 4px 7px 28px;font:inherit;font-size:12px;color:var(--ink);outline:none;
+  }
+  .search:focus{border-color:var(--ink)}
+  .search::placeholder{color:var(--faint)}
+  .result-count{font-family:var(--mono);font-size:10px;color:var(--faint);white-space:nowrap}
+  .issue-list{display:grid;gap:12px}
+  .issue{
+    display:grid;grid-template-columns:78px 1fr;gap:0;
+    background:var(--card);border:1px solid var(--line);border-left:3px solid var(--line-2);
+    border-radius:12px;overflow:hidden;transition:.2s box-shadow,.2s transform;
+    scroll-margin-top:150px;
+  }
+  .issue:hover{box-shadow:var(--shadow-sm);transform:translateY(-1px)}
+  .issue.p0{border-left-color:var(--red-2)}
+  .issue.p1{border-left-color:var(--amber-2)}
+  .issue.p2{border-left-color:var(--blue)}
+  .issue .rail{
+    padding:18px 12px;border-right:1px solid #eee7d9;background:#fcf9f1;
+    display:flex;flex-direction:column;align-items:center;gap:7px;
+  }
+  .issue .sev{
+    font-size:9px;font-weight:700;letter-spacing:.1em;padding:3px 6px;border-radius:3px;
+    border:1px solid currentColor;
+  }
+  .issue.p0 .sev{color:var(--red)}
+  .issue.p1 .sev{color:var(--amber)}
+  .issue.p2 .sev{color:var(--blue)}
+  .issue .ino{font-family:var(--mono);font-size:22px;line-height:1;color:var(--ink);letter-spacing:-.05em}
+  .issue .body{padding:17px 22px 15px;min-width:0}
+  .issue .meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10px}
+  .issue .cat{font-weight:700;letter-spacing:.06em;color:var(--ink-2);border:1px solid var(--line-2);padding:2px 6px;border-radius:3px}
+  .issue .loc{color:var(--faint);font-family:var(--mono);font-size:10px}
+  .issue h3{font-size:16.5px;line-height:1.45;margin:8px 0 7px;font-weight:700;letter-spacing:-.01em}
+  .issue .finding{margin:0;color:var(--muted);font-size:12.8px;line-height:1.75;max-width:980px}
+  .issue .finding b{color:var(--ink);font-weight:600;background:linear-gradient(transparent 62%, rgba(214,71,47,.16) 62%)}
+  .issue .fix{margin:8px 0 0;font-size:12.3px;line-height:1.7;color:var(--ink-2);max-width:980px}
+  .issue .fix>span{
+    display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.08em;color:var(--green);
+    border:1px solid #b9d3bf;background:var(--green-soft);border-radius:3px;padding:1px 5px;margin-right:7px;
+    transform:translateY(-1px);
+  }
+  .issue .actions{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:10px}
+  .issue .link{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--ink-2);border-bottom:1px solid var(--line-2);padding-bottom:1px}
+  .issue .link:hover{color:var(--red);border-color:var(--red)}
+  .issue .link svg{width:11px;height:11px}
+  .issue .impact{font-size:10.5px;color:var(--faint)}
+  .empty{
+    border:1px dashed var(--line-2);border-radius:12px;padding:40px 20px;text-align:center;color:var(--muted);font-size:13px;
+  }
+  .empty b{display:block;font-family:var(--serif);font-size:20px;color:var(--ink);margin-bottom:4px;font-weight:600}
+
+  /* plan */
+  .plan-wrap{display:grid;grid-template-columns:1.4fr .8fr;gap:30px;align-items:start}
+  .steps{counter-reset:s;list-style:none;margin:0;padding:0;display:grid;gap:0;border-top:1px solid var(--line)}
+  .steps li{
+    counter-increment:s;position:relative;padding:18px 0 18px 54px;border-bottom:1px solid var(--line);
+    display:grid;gap:3px;
+  }
+  .steps li:before{
+    content:counter(s,decimal-leading-zero);position:absolute;left:0;top:18px;
+    font-family:var(--serif);font-size:20px;color:var(--red);letter-spacing:-.03em;
+  }
+  .steps li b{font-size:14px;font-weight:700}
+  .steps li span{font-size:12px;color:var(--muted);line-height:1.65}
+  .steps li i{font-style:normal;font-family:var(--mono);font-size:9.5px;color:var(--faint);letter-spacing:.06em}
+  .after-card{
+    background:linear-gradient(150deg,#1f1d18,#373129);color:#f6efe1;border-radius:16px;padding:28px;
+    position:relative;overflow:hidden;
+  }
+  .after-card:after{content:"";position:absolute;width:210px;height:210px;border:1px solid rgba(255,255,255,.09);border-radius:50%;right:-70px;top:-80px}
+  .after-card .k{font-size:9.5px;letter-spacing:.16em;color:#bfb29a;font-weight:700}
+  .after-card b{display:block;font-family:var(--serif);font-size:58px;line-height:1;margin:12px 0 4px;font-weight:600;letter-spacing:-.04em}
+  .after-card b span{font-size:15px;color:#bfb29a;font-family:var(--mono);letter-spacing:0}
+  .after-card p{font-size:12px;color:#cfc4b0;margin:0;line-height:1.7}
+  .after-card ul{margin:16px 0 0;padding:14px 0 0;border-top:1px solid rgba(255,255,255,.12);list-style:none;display:grid;gap:7px}
+  .after-card li{font-size:11.5px;color:#e7dece;display:flex;gap:8px;align-items:flex-start}
+  .after-card li:before{content:"✓";color:#9fc9a9;font-size:10px;margin-top:1px}
+
+  /* method */
+  .method-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;border-top:1px solid var(--line);padding-top:24px}
+  .method h3{font-size:12px;letter-spacing:.08em;margin:0 0 8px;color:var(--ink-2)}
+  .method p,.method li{font-size:12px;color:var(--muted);line-height:1.8;margin:0}
+  .method ul{margin:0;padding-left:18px}
+  .method li{margin-bottom:3px}
+
+  footer{margin-top:70px;border-top:1px solid var(--line);padding:26px 0 44px}
+  .foot-grid{display:flex;justify-content:space-between;gap:30px;flex-wrap:wrap;font-size:10.5px;color:var(--faint)}
+  .foot-grid b{color:var(--ink-2);font-weight:600}
+
+  /* lightbox */
+  .lightbox[hidden]{display:none}
+  .lightbox{
+    position:fixed;inset:0;z-index:100;background:rgba(24,20,14,.84);
+    backdrop-filter:blur(7px);display:flex;align-items:center;justify-content:center;padding:22px;
+  }
+  .lb-panel{
+    width:min(1220px,97vw);height:min(92vh,980px);
+    background:#f8f4ea;border-radius:16px;overflow:hidden;
+    display:grid;grid-template-columns:1fr 350px;
+    box-shadow:0 30px 100px rgba(0,0,0,.45);
+    animation:lbIn .2s ease-out;
+  }
+  @keyframes lbIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
+  .lb-stage{background:#ded6c5;padding:20px;display:flex;align-items:center;justify-content:center;min-width:0;position:relative}
+  .page-canvas{position:relative;height:100%;width:auto;aspect-ratio:595.32/841.92;flex:0 0 auto;background:#fff;box-shadow:0 16px 44px rgba(0,0,0,.24);overflow:hidden}
+  .page-canvas img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain}
+  .page-canvas .mark{position:absolute;width:9px;height:9px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.2);transform:translate(-50%,-50%);opacity:.85;cursor:pointer}
+  .page-canvas .mark.p0{background:var(--red-2)}.page-canvas .mark.p1{background:var(--amber-2)}.page-canvas .mark.p2{background:var(--blue)}
+  .focus-box{
+    position:absolute;border:2px solid var(--red-2);background:rgba(214,71,47,.12);
+    box-shadow:0 0 0 4px rgba(214,71,47,.12);border-radius:2px;
+    transition:.2s;pointer-events:none;
+  }
+  .focus-box:after{
+    content:attr(data-label);position:absolute;left:-2px;top:-25px;
+    background:var(--red-2);color:#fff;font-family:var(--mono);font-size:9px;
+    padding:3px 7px;border-radius:3px 3px 3px 0;white-space:nowrap;letter-spacing:.03em;
+  }
+  .lb-stage .through{
+    position:absolute;right:28px;bottom:24px;background:rgba(47,107,79,.94);color:#fff;
+    border-radius:999px;padding:7px 12px;font-size:10.5px;font-weight:600;letter-spacing:.04em;
+  }
+  .lb-side{display:flex;flex-direction:column;min-height:0;background:#fbf8f1;border-left:1px solid var(--line)}
+  .lb-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px 22px 14px;border-bottom:1px solid var(--line)}
+  .lb-head .k{font-size:9px;letter-spacing:.16em;color:var(--red);font-weight:700}
+  .lb-head h3{font-family:var(--serif);font-size:24px;line-height:1.1;margin:6px 0 0;font-weight:600;letter-spacing:-.02em}
+  .lb-close{width:30px;height:30px;border:1px solid var(--line-2);border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none;color:var(--muted);font-size:16px;line-height:1}
+  .lb-close:hover{background:#fff;color:var(--ink)}
+  .lb-body{padding:18px 22px;overflow:auto;flex:1;min-height:0}
+  .lb-body .sevline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:10px;margin-bottom:9px}
+  .lb-body .sevline .s{font-weight:700;letter-spacing:.08em;border:1px solid currentColor;padding:2px 6px;border-radius:3px}
+  .lb-body .sevline .s.p0{color:var(--red)}.lb-body .sevline .s.p1{color:var(--amber)}.lb-body .sevline .s.p2{color:var(--blue)}
+  .lb-body .sevline .c{color:var(--faint);font-family:var(--mono)}
+  .lb-body h4{font-size:15px;line-height:1.5;margin:0 0 9px;font-weight:700}
+  .lb-body p{font-size:12px;line-height:1.75;color:var(--muted);margin:0 0 10px}
+  .lb-body p b{color:var(--ink);font-weight:600}
+  .lb-body .fixbox{background:var(--green-soft);border:1px solid #cfe0d3;border-radius:8px;padding:10px 12px;font-size:11.5px;color:#2c5a41;line-height:1.7}
+  .lb-body .fixbox b{display:block;font-size:9px;letter-spacing:.1em;color:var(--green);margin-bottom:3px}
+  .lb-body .other{margin-top:18px;border-top:1px dashed var(--line);padding-top:12px}
+  .lb-body .other .k{font-size:9px;letter-spacing:.1em;color:var(--faint);font-weight:700;margin-bottom:8px}
+  .lb-body .olist{display:grid;gap:6px}
+  .lb-body .oitem{display:flex;gap:8px;align-items:flex-start;text-align:left;font-size:11px;line-height:1.55;color:var(--ink-2);border:1px solid var(--line);background:#fff;border-radius:6px;padding:7px 9px}
+  .lb-body .oitem:hover{border-color:var(--line-2);background:#fffdf7}
+  .lb-body .oitem i{font-family:var(--mono);font-style:normal;font-size:9.5px;color:var(--faint);flex:none;margin-top:1px}
+  .lb-body .oitem.p0 i{color:var(--red)}.lb-body .oitem.p1 i{color:var(--amber)}.lb-body .oitem.p2 i{color:var(--blue)}
+  .lb-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 18px;border-top:1px solid var(--line);font-size:10.5px;color:var(--muted)}
+  .lb-nav button{display:inline-flex;align-items:center;gap:5px;padding:6px 9px;border:1px solid var(--line-2);border-radius:6px;font-size:10.5px;background:#fff}
+  .lb-nav button:hover{border-color:var(--ink-2)}
+  .lb-nav .num{font-family:var(--mono);font-size:10px;color:var(--faint)}
+
+  /* reveal */
+  .js .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s ease}
+  .js .reveal.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){
+    .js .reveal{opacity:1;transform:none;transition:none}
+    html{scroll-behavior:auto}
+    .lb-panel{animation:none}
+  }
+
+  @media (max-width:1020px){
+    .hero-grid{grid-template-columns:1fr;gap:34px}
+    .score-wrap{justify-content:flex-start}
+    .score-card{max-width:420px}
+    .stats{grid-template-columns:repeat(3,1fr)}
+    .stat:nth-child(3n){border-right:0}
+    .stat:nth-child(-n+3){border-bottom:1px solid var(--line)}
+    .profile{grid-template-columns:1fr;gap:14px}
+    .profile-bars{grid-template-columns:repeat(2,1fr)}
+    .page-grid{grid-template-columns:repeat(4,1fr)}
+    .ev.a,.ev.b,.ev.c,.ev.d{grid-column:span 12}
+    .plan-wrap{grid-template-columns:1fr}
+  }
+  @media (max-width:940px){
+    .nav{display:none}
+    .lb-panel{grid-template-columns:1fr;grid-template-rows:minmax(0,56%) minmax(0,44%);height:94vh}
+    .lb-stage{padding:10px;min-height:0}
+    .lb-side{border-left:0;border-top:1px solid var(--line);max-height:none;min-height:0}
+    .page-canvas{height:100%;width:auto;max-width:100%;margin:0 auto}
+    .lb-head{padding:12px 16px 9px}
+    .lb-head h3{font-size:20px}
+    .lb-body{padding:12px 16px}
+    .lb-nav{padding:8px 14px}
+  }
+  @media (max-width:760px){
+    .shell{padding:0 18px}
+    .nav{display:none}
+    .hero{padding:52px 0 40px}
+    .hero h1{font-size:40px}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .stat:nth-child(2n){border-right:0}
+    .stat:nth-child(3){border-right:1px solid var(--line)}
+    .stat:nth-child(-n+4){border-bottom:1px solid var(--line)}
+    .profile-bars{grid-template-columns:1fr}
+    .verdict-grid{grid-template-columns:1fr}
+    .page-grid{grid-template-columns:repeat(3,1fr)}
+    .issue{grid-template-columns:58px 1fr}
+    .issue .rail{padding:14px 6px}
+    .issue .ino{font-size:18px}
+    .issue .body{padding:14px 15px}
+    .issue h3{font-size:15px}
+    .toolbar{top:0;position:relative}
+    .search-wrap{max-width:none;min-width:100%}
+    .lb-panel{grid-template-columns:1fr;grid-template-rows:minmax(0,56%) minmax(0,44%);height:94vh}
+    .lb-stage{padding:10px;min-height:0}
+    .lb-side{border-left:0;border-top:1px solid var(--line);max-height:none;min-height:0}
+    .page-canvas{height:100%;width:auto;max-width:100%;margin:0 auto}
+    .lb-head{padding:12px 16px 9px}
+    .lb-head h3{font-size:20px}
+    .lb-body{padding:12px 16px}
+    .lb-nav{padding:8px 14px}
+    .mock-pair,.split2{grid-template-columns:1fr}
+    .method-grid{grid-template-columns:1fr}
+  }
+  @media print{
+    body{background:#fff;font-size:10.5pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body::before,.topbar,.progress,.hero-actions,.toolbar,.lb-panel,.lightbox,.global-note,.legend{display:none!important}
+    .js .reveal{opacity:1!important;transform:none!important}
+    .shell{max-width:none;padding:0}
+    .hero{padding:0 0 18px}
+    .hero:after{display:none}
+    .hero-grid{grid-template-columns:1fr auto;gap:20px}
+    .hero h1{font-size:30pt}
+    .score-card{box-shadow:none;border:1px solid #ccc;max-width:250px;padding:14px}
+    .ring{width:90px;height:90px}
+    .score-num{width:90px;height:90px}
+    .score-num b{font-size:30px}
+    .stats{grid-template-columns:repeat(6,1fr)}
+    section{padding-top:26px}
+    .page-grid{grid-template-columns:repeat(6,1fr);gap:8px}
+    .page-card{break-inside:avoid}
+    .issue{break-inside:avoid;box-shadow:none}
+    .ev,.verdict-card{break-inside:avoid;box-shadow:none}
+    .ev.a,.ev.b,.ev.c,.ev.d{grid-column:span 12}
+    .steps li{break-inside:avoid}
+    #verdict{break-before:page}
+    #evidence,#pages,#issues,#plan{break-before:page}
+    .sec-head{break-after:avoid}
+    .verdict-grid,.evidence-grid,.page-grid,.issue-list{break-inside:auto}
+    footer{margin-top:24px}
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<header class="topbar">
+  <div class="shell">
+    <a class="brand" href="#top"><span class="mark"></span>极方数学 <span>·</span> 印前体检</a>
+    <nav class="nav">
+      <a href="#verdict">结论</a>
+      <a href="#evidence">关键证据</a>
+      <a href="#pages">页面热力</a>
+      <a href="#issues">问题清单</a>
+      <a href="#plan">修复顺序</a>
+    </nav>
+    <button class="print-btn" id="printBtn" aria-label="打印报告">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 8V3h10v5M7 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg>
+      打印 / 存为 PDF
+    </button>
+  </div>
+</header>
+
+<main id="top">
+  <div class="shell">
+
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow">Prepress check · 2026-10-27</div>
+          <h1>《走进几何世界》<br><em>格式体检报告</em></h1>
+          <p class="lede">18 页逐页目检，并与源 DOCX 的页眉、表格、字号交叉核对。共发现 22 项问题，其中 4 项会在付印后直接暴露。</p>
+          <div class="file">
+            <b>FILE</b>
+            <span>【极方数学】初一S+《专题八》：《走进几何世界常考题型及解决方法》.pdf</span>
+          </div>
+          <div class="hero-actions">
+            <a class="btn primary" href="#issues">查看 22 项问题 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            <a class="btn" href="#evidence">先看 4 个阻断项</a>
+          </div>
+        </div>
+        <div class="score-wrap">
+          <div class="score-card">
+            <div class="score-top"><span>FORMAT SCORE</span><span>P1–P18</span></div>
+            <div class="score-body">
+              <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+                <defs>
+                  <linearGradient id="scoreGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#d6472f"/>
+                    <stop offset="100%" stop-color="#d08a24"/>
+                  </linearGradient>
+                </defs>
+                <circle class="bg" cx="60" cy="60" r="52"/>
+                <circle class="fg" cx="60" cy="60" r="52" pathLength="100" stroke-dasharray="100" stroke-dashoffset="39"/>
+              </svg>
+              <div class="score-num"><b>61</b><span>/ 100</span></div>
+              <div class="score-legend">
+                <b>需修改后付印</b>
+                <div class="bars">
+                  <div><span>阻断</span><i>4</i></div>
+                  <div><span>重要</span><i>9</i></div>
+                  <div><span>优化</span><i>9</i></div>
+                </div>
+              </div>
+            </div>
+            <div class="stamp">需 修 改 后 付 印</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="stats reveal">
+      <div class="stat red"><i></i><b>22</b><span>问题总数</span></div>
+      <div class="stat red"><i></i><b>4</b><span>阻断项</span></div>
+      <div class="stat amber"><i></i><b>9</b><span>重要项</span></div>
+      <div class="stat blue"><i></i><b>9</b><span>优化项</span></div>
+      <div class="stat"><i></i><b>19</b><span>页眉错误处</span></div>
+      <div class="stat"><i></i><b>6</b><span>无标签题</span></div>
+    </div>
+
+    <div class="profile reveal">
+      <div class="profile-head">
+        <div class="k">SCORE BREAKDOWN</div>
+        <h3>61 分怎么来的</h3>
+        <p>六项均分；编号与内容两项被阻断项拉低。</p>
+      </div>
+      <div class="profile-bars">
+        <div class="pbar"><span>编号与结构</span><span class="track"><span class="fill" style="width:42%"></span></span><b>42</b></div>
+        <div class="pbar"><span>内容准确</span><span class="track"><span class="fill" style="width:55%"></span></span><b>55</b></div>
+        <div class="pbar"><span>图文一致</span><span class="track"><span class="fill" style="width:58%"></span></span><b>58</b></div>
+        <div class="pbar"><span>文字标点</span><span class="track"><span class="fill" style="width:66%"></span></span><b>66</b></div>
+        <div class="pbar"><span>图表版式</span><span class="track"><span class="fill" style="width:70%"></span></span><b>70</b></div>
+        <div class="pbar"><span>版面节奏</span><span class="track"><span class="fill" style="width:74%"></span></span><b>74</b></div>
+      </div>
+    </div>
+
+    <section id="verdict" class="reveal">
+      <div class="sec-head">
+        <div class="left">
+          <div class="sec-kicker">01 / Executive summary</div>
+          <h2>先看结论：4 个问题必须先改</h2>
+          <p>其余 18 项以图文规范、文字和版面为主，不改变知识点，但会直接影响“像不像一本正式讲义”。</p>
+        </div>
+        <div class="sec-count">4 BLOCKERS / 18 POLISH</div>
+      </div>
+      <div class="verdict-grid">
+        <article class="verdict-card p0">
+          <span class="big">01</span>
+          <div class="tag">编号错误 · 全篇</div>
+          <h3>页眉和封面把《专题八》写成了《专题十》</h3>
+          <p>18 个页眉 + 封面大标题，共 19 处。文件名、源 DOCX、同目录另一版 PDF 全部是“专题八”，只有送检 PDF 是“专题十”。</p>
+          <a class="go" href="#issue-01">查看证据与定位 <span>→</span></a>
+        </article>
+        <article class="verdict-card p0">
+          <span class="big">02</span>
+          <div class="tag">内容硬伤 · P2</div>
+          <h3>分类表把“棱柱”划进了“无顶点”</h3>
+          <p>同页“基础知识点五”还要求数出“四棱柱有 8 个顶点”。一张表、一段文字，在同一页互相打脸。</p>
+          <a class="go" href="#issue-02">查看对照 <span>→</span></a>
+        </article>
+        <article class="verdict-card p0">
+          <span class="big">03</span>
+          <div class="tag">结构编号 · P15 / P17</div>
+          <h3>两个“第五部分”，目录层级断开</h3>
+          <p>P15 是“第五部分 课后巩固专区”，P17 又是“第五部分 极方X系列”，两处都是同级别的红色居中标题。</p>
+          <a class="go" href="#issue-03">查看层级 <span>→</span></a>
+        </article>
+        <article class="verdict-card p0">
+          <span class="big">04</span>
+          <div class="tag">知识错误 · P17</div>
+          <h3>材料2 把“组合数”写成了“排列数”</h3>
+          <p>文字说“排列数记作 A”，紧接着的例子又用 C。术语、符号、公式三者对不上，学生会把两个概念混在一起。</p>
+          <a class="go" href="#issue-04">查看原文 <span>→</span></a>
+        </article>
+      </div>
+    </section>
+
+    <section id="evidence" class="reveal">
+      <div class="sec-head">
+        <div class="left">
+          <div class="sec-kicker">02 / Evidence</div>
+          <h2>关键证据：四个阻断项都能对上源文件</h2>
+          <p>把送检 PDF 与源 DOCX 放在一起看，4 个阻断项都能定位到具体页、具体表格、具体行。</p>
+        </div>
+        <div class="sec-count">SOURCE DOCX ↔ PDF</div>
+      </div>
+      <div class="evidence-grid">
+
+        <article class="ev a">
+          <header><span class="tag">01 · 页眉</span><h3>同一份讲义，三个名字</h3></header>
+          <div class="mock-pair">
+            <div class="mock good">
+              <div class="mh"><span>【极方数学】初一S+</span><b>《专题八》</b></div>
+              <div class="ml">源 DOCX 页眉 · 文件名 · 同目录 PDF</div>
+              <div class="verdict">✓ 三处一致</div>
+            </div>
+            <div class="mock bad">
+              <div class="mh"><span>【极方数学】初一S+</span><b>《专题十》</b></div>
+              <div class="ml">送检 PDF · 18 / 18 页页眉 + 封面</div>
+              <div class="verdict">✕ 与源文件全部冲突</div>
+            </div>
+          </div>
+          <div class="occur" aria-label="19处出现位置">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            <span>19 OCCURRENCES</span>
+          </div>
+          <div class="foot">这是典型的“全局查找替换”事故：内容没动，只把“八”换成了“十”。改回来只需一次替换，但必须重新导出并抽查页眉。</div>
+        </article>
+
+        <article class="ev b">
+          <header><span class="tag">02 · 分类表</span><h3>“棱柱无顶点”与同页知识直接冲突</h3></header>
+          <div class="split2">
+            <div>
+              <h4>源 DOCX / 另一版 PDF</h4>
+              <table class="mini-table">
+                <tr class="good"><td class="k">是</td><td>圆锥、<b>棱柱</b>、棱锥</td></tr>
+                <tr><td class="k">否</td><td>圆柱、球</td></tr>
+              </table>
+            </div>
+            <div>
+              <h4>送检 PDF</h4>
+              <table class="mini-table">
+                <tr class="bad"><td class="k">是</td><td>圆锥、棱锥</td></tr>
+                <tr class="bad"><td class="k">否</td><td>圆柱、<b>棱柱</b>、球</td></tr>
+              </table>
+            </div>
+          </div>
+          <div class="foot">同页 P2 下方：“四棱柱有 ___ 个面，<b>___ 个顶点</b>，___ 条棱”。答案 8 —— 与“棱柱无顶点”正面冲突。</div>
+        </article>
+
+        <article class="ev c">
+          <header><span class="tag">03 · 部分编号</span><h3>第五部分出现了两次</h3></header>
+          <div class="stepper">
+            <span class="step"><b>第一</b> 基础清单</span><span class="arrow">→</span>
+            <span class="step"><b>第二</b> 欧拉公式</span><span class="arrow">→</span>
+            <span class="step"><b>第三</b> 柯南推理</span><span class="arrow">→</span>
+            <span class="step"><b>第四</b> 动态计算</span><span class="arrow">→</span>
+            <span class="step dup"><b>第五</b> 课后巩固</span>
+            <span class="step dup"><b>第五</b> 极方X</span>
+          </div>
+          <div class="step-lab"><span>P15 · 第五部分 课后巩固专区</span><span><i>P17 · 第五部分 极方X系列</i></span></div>
+          <div class="foot">P17 应顺延为“第六部分”，或改成“附录 / 附：极方X系列”。同级别标题不能重号。</div>
+        </article>
+
+        <article class="ev d">
+          <header><span class="tag">04 · 使用说明</span><h3>删掉了“说明3”，却保留了 6 道无标签题</h3></header>
+          <div class="ghost-lines">
+            <div class="gl"><b>说明1：</b>务必做好【预习】工作，不会的做标记，课前建议用时：60-90 分钟</div>
+            <div class="gl"><b>说明2：</b>课堂时间宝贵，【预习】部分直接对答案讲解方法和干货，不留做题时间</div>
+            <div class="gl miss"><b>说明3（缺失）：</b>未标记题型属于补充练习，课后自由完成这部分内容，不做强制要求</div>
+          </div>
+          <div class="chips6" aria-label="未标记题目">
+            <span>Q3</span><span>Q7</span><span>Q22</span><span>Q26</span><span>Q29</span><span>Q34</span>
+          </div>
+          <div class="foot">同系列《专题七》模板里有这条说明。本册删掉了说明，却仍有 6 道题不标“（预习）/（课堂）”，读者无法判断是遗漏还是补充练习。</div>
+        </article>
+
+      </div>
+    </section>
+
+    <section id="pages" class="reveal">
+      <div class="sec-head">
+        <div class="left">
+          <div class="sec-kicker">03 / Page heatmap</div>
+          <h2>逐页热力图：问题集中在哪些页</h2>
+          <p>点击任意一页打开原页检视，红框会落在对应问题上。P4、P7、P8 未发现格式问题。</p>
+        </div>
+        <div class="sec-count">18 PAGES · 24 MARKS</div>
+      </div>
+      <div class="global-note"><span class="pin"></span><span><b>全篇提示：</b>18 个页眉 + 封面均把“专题八”写成“专题十”，页图只在 P1 标记一次。</span></div>
+      <div class="page-grid" id="pageGrid"></div>
+      <div class="legend">
+        <span><i class="l0"></i>阻断 P0</span>
+        <span><i class="l1"></i>重要 P1</span>
+        <span><i class="l2"></i>优化 P2</span>
+        <span><i class="l3"></i>本页通过</span>
+      </div>
+    </section>
+
+    <section id="issues" class="reveal">
+      <div class="sec-head">
+        <div class="left">
+          <div class="sec-kicker">04 / Issue log</div>
+          <h2>问题清单：22 项，按严重度排</h2>
+          <p>“阻断”= 付印后会被读者直接看到；“重要”= 影响理解或专业度；“优化”= 不影响对错，但建议统一。</p>
+        </div>
+        <div class="sec-count" id="totalCount">22 ITEMS</div>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-inner">
+          <div class="chips" id="sevChips">
+            <button class="chip active" data-sev="all">全部 <span>22</span></button>
+            <button class="chip" data-sev="p0">阻断 <span>4</span></button>
+            <button class="chip" data-sev="p1">重要 <span>9</span></button>
+            <button class="chip" data-sev="p2">优化 <span>9</span></button>
+          </div>
+          <div class="chips" id="catChips">
+            <button class="chip active" data-cat="all">全部分类</button>
+            <button class="chip" data-cat="编号结构">编号结构 <span>3</span></button>
+            <button class="chip" data-cat="内容硬伤">内容硬伤 <span>3</span></button>
+            <button class="chip" data-cat="图文规范">图文规范 <span>10</span></button>
+            <button class="chip" data-cat="文字标点">文字标点 <span>5</span></button>
+            <button class="chip" data-cat="版面节奏">版面节奏 <span>1</span></button>
+          </div>
+          <div class="search-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input class="search" id="search" type="search" placeholder="搜索：棱柱 / 单位 / P12 / 专题十…" aria-label="搜索问题">
+          </div>
+          <span class="result-count" id="resultCount">22 / 22</span>
+        </div>
+      </div>
+      <div class="issue-list" id="issueList"></div>
+    </section>
+
+    <section id="plan" class="reveal">
+      <div class="sec-head">
+        <div class="left">
+          <div class="sec-kicker">05 / Fix order</div>
+          <h2>建议修复顺序：先改“会被看见的”</h2>
+          <p>前两步约 25 分钟，先把 4 个阻断项清掉；第三步再花 15 分钟，把“说明3”和 4 处文字硬伤一起处理。</p>
+        </div>
+        <div class="sec-count">4 BLOCKERS · 25 MIN</div>
+      </div>
+      <div class="plan-wrap">
+        <ol class="steps">
+          <li><b>全局替换页眉与封面编号</b><span>确认当前 DOCX 页眉为《专题八》后重新导出；若仍用旧版源文件，先全局替换“专题十”→“专题八”。导出后抽查 P1、P9、P18 页眉。</span><i>01 · 10 MIN · 19 处</i></li>
+          <li><b>修 3 个知识 / 结构硬伤</b><span>恢复“棱柱”到“有顶点”行；P17 的“第五部分”改为“第六部分 / 附录”；材料2 的“排列数”改为“组合数”。</span><i>02 · 15 MIN · P2 / P17</i></li>
+          <li><b>补“说明3” + 修 4 处文字</b><span>补回“未标记题型属于补充练习”，或给 6 道题补标签；同时改“正方形→正方体”“亮尖→笔尖”“从而→从面”，修第1题（4）逻辑。</span><i>03 · 15 MIN · P1 / P3 / P5 / P15</i></li>
+          <li><b>统一图号、单位、横线、标点</b><span>图号统一“图1 / 图2”；单位统一“cm + 空格”；横线收成 3 种标准长度；修“5cm．则”“体积之比是”；换掉第30题①的立体图。</span><i>04 · 20 MIN · 跨页</i></li>
+          <li><b>图文细节与版面节奏</b><span>P1 表格截断、P2 表头、P6 空白骰子、P15 题干图位置、P18 图注、P10 加粗的 2026，以及断行 / 留白等 9 项优化。</span><i>05 · 20 MIN · 9 项优化</i></li>
+        </ol>
+        <aside class="after-card">
+          <div class="k">AFTER FIX · ESTIMATE</div>
+          <b>90<span> / 100</span></b>
+          <p>阻断项与重要项清零后的预估格式分。剩下 10 分是版面节奏与跨页留白，可按付印时间决定是否继续打磨。</p>
+          <ul>
+            <li>编号与页眉 100% 一致</li>
+            <li>知识性冲突清零</li>
+            <li>图号 / 单位 / 横线成体系</li>
+            <li>无标签题有明确规则</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+
+    <section class="method reveal">
+      <div class="sec-head">
+        <div class="left">
+          <div class="sec-kicker">06 / Method</div>
+          <h2>检查口径</h2>
+        </div>
+      </div>
+      <div class="method-grid">
+        <div>
+          <h3>怎么查的</h3>
+          <p>逐页渲染送检 PDF（18 页，A4，595×842 pt）目检版式；同时读取源 DOCX 的页眉、表格单元格、字号与字体，做交叉核对。缩略图与红框均来自送检 PDF，坐标按页面实际尺寸换算。</p>
+        </div>
+        <div>
+          <h3>边界说明</h3>
+          <ul>
+            <li>“阻断 / 重要 / 优化”是编辑优先级，不是教研结论。</li>
+            <li>棱柱分类、材料2 术语、第1题（4）逻辑属于内容问题，建议学科老师复核后再改。</li>
+            <li>P4、P7、P8 在本次目检中未发现格式问题，不代表题目内容全部正确。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <div class="shell">
+    <div class="foot-grid">
+      <div><b>《走进几何世界》格式体检报告</b><br>极方数学 · 初一 S+ · 专题八 · 18 页</div>
+      <div>检查日期：2026-10-27<br>来源：送检 PDF + 源 DOCX</div>
+      <div>页面缩略图来自送检 PDF<br>红框为问题定位示意，非印刷标记</div>
+    </div>
+  </div>
+</footer>
+
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="页面检视">
+  <div class="lb-panel">
+    <div class="lb-stage" id="lbStage">
+      <div class="page-canvas" id="lbCanvas">
+        <img id="lbImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="页面预览">
+        <div id="lbMarks"></div>
+        <div class="focus-box" id="lbFocus" hidden data-label=""></div>
+      </div>
+      <div class="through" id="lbThrough" hidden>✓ 本页未发现格式问题</div>
+    </div>
+    <aside class="lb-side">
+      <div class="lb-head">
+        <div><div class="k">PAGE INSPECTOR</div><h3 id="lbPageTitle">第 1 页</h3></div>
+        <button class="lb-close" id="lbClose" aria-label="关闭">×</button>
+      </div>
+      <div class="lb-body" id="lbBody"></div>
+      <div class="lb-nav">
+        <button id="lbPrev">← 上一页</button>
+        <span class="num" id="lbNum">1 / 18</span>
+        <button id="lbNext">下一页 →</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  document.documentElement.classList.add("js");
+
+  const PAGE_W = 595.32, PAGE_H = 841.92;
+
+  const PAGES = [
+    {n:1,  label:"封面 · 说明", part:"第一部分"},
+    {n:2,  label:"基础清单", part:"第一部分"},
+    {n:3,  label:"欧拉公式", part:"第二部分"},
+    {n:4,  label:"欧拉公式", part:"第二部分"},
+    {n:5,  label:"一笔画", part:"第二部分"},
+    {n:6,  label:"柯南推理", part:"第三部分"},
+    {n:7,  label:"展开图", part:"第三部分"},
+    {n:8,  label:"展开图", part:"第三部分"},
+    {n:9,  label:"展开图", part:"第三部分"},
+    {n:10, label:"滚动 / 折叠", part:"第三部分"},
+    {n:11, label:"动态与计算", part:"第四部分"},
+    {n:12, label:"展开问题", part:"第四部分"},
+    {n:13, label:"展开问题", part:"第四部分"},
+    {n:14, label:"七巧板", part:"第四部分"},
+    {n:15, label:"课后巩固", part:"第五部分"},
+    {n:16, label:"课后巩固", part:"第五部分"},
+    {n:17, label:"极方X", part:"第五部分"},
+    {n:18, label:"极方X", part:"第五部分"}
+  ];
+
+  const ISSUES = [
+    {
+      id:"01", sev:"p0", cat:"编号结构",
+      title:"页眉与封面把《专题八》写成《专题十》",
+      pageLabel:"P1–P18", loc:"页眉 / 封面",
+      finding:"全篇 18 个页眉及封面大标题均为“《专题十》”，共 19 处；文件名、源 DOCX 页眉、同目录另一版 PDF 均为“《专题八》”。这是全局替换留下的硬伤，翻开第一页即可看到。",
+      fix:"源 DOCX 页眉已是“专题八”，问题出在送检 PDF 的导出环节；用当前 DOCX 重新导出，确认页眉为“专题八”，并抽查 P1、P9、P18 页眉。",
+      impact:"全篇品牌与编号",
+      marks:[{p:1, box:[430,26,560,42]}],
+      focus:1,
+      tags:"专题十 专题八 页眉 封面 编号 19处"
+    },
+    {
+      id:"02", sev:"p0", cat:"内容硬伤",
+      title:"分类表把“棱柱”划进“无顶点”，与同页知识冲突",
+      pageLabel:"P2", loc:"基础知识点三 · 分类表",
+      finding:"当前 PDF 的“按是否有顶点”一表写作“是：圆锥、棱锥；否：圆柱、棱柱、球”。棱柱显然有顶点；同页“基础知识点五”还要求数出“四棱柱有 8 个顶点”。源 DOCX 与同目录另一版 PDF 均为“是：圆锥、棱柱、棱锥；否：圆柱、球”。",
+      fix:"恢复源 DOCX 的分行。若坚持“尖顶”口径，请把行名改为“是否有尖顶（锥体）”，避免与“顶点”概念混淆。",
+      impact:"概念错误 / 学生误导",
+      marks:[{p:2, box:[60,288,535,335]}],
+      focus:2,
+      tags:"棱柱 顶点 分类 无顶点 四棱柱 8个顶点"
+    },
+    {
+      id:"03", sev:"p0", cat:"编号结构",
+      title:"两个“第五部分”，目录层级断裂",
+      pageLabel:"P15 / P17", loc:"部分标题",
+      finding:"P15 是“第五部分 课后巩固专区”，P17 又是“第五部分 极方X系列（S+专属）”。两处均为红色居中大标题，层级相同，后一处应顺延为“第六部分”或改为“附：极方X系列”。",
+      fix:"将 P17 改为“第六部分 极方X系列（S+专属）”或“附录 极方X系列”；同步检查目录 / 页脚。",
+      impact:"结构 / 编号",
+      marks:[{p:15, box:[200,40,420,70]},{p:17, box:[160,40,390,70]}],
+      focus:15,
+      tags:"第五部分 第六部分 极方X 课后巩固 部分标题"
+    },
+    {
+      id:"04", sev:"p0", cat:"内容硬伤",
+      title:"材料2 把“组合数”写成“排列数”",
+      pageLabel:"P17", loc:"7数【极方X】第39讲 · 材料2",
+      finding:"材料2 讲组合，却写“从 n 个不同的元素中取出 m 个元素的排列数记作 A_n^m”，并再次给出排列公式 A_n^m=n(n−1)…；紧接着的例子又用 C_6^3。术语、符号、公式三者不一致。",
+      fix:"改为“组合数记作 C_n^m，C_n^m = n(n−1)…(n−m+1)/m!”；删除重复的排列公式。",
+      impact:"知识性错误",
+      marks:[{p:17, box:[55,580,540,615]}],
+      focus:17,
+      tags:"材料2 排列数 组合数 A C 39讲 组合 排列"
+    },
+    {
+      id:"05", sev:"p1", cat:"编号结构",
+      title:"“说明3”缺失，6 道无标签题失去解释",
+      pageLabel:"P1", loc:"说明区",
+      finding:"全篇只有说明1、说明2。按同系列《专题七》模板，应有“说明3：未标记题型属于补充练习……”。本册 Q3、Q7、Q22、Q26、Q29、Q34 共 6 道题未标“（预习）/（课堂）”，没有说明3，读者无法判断这是遗漏还是补充练习。",
+      fix:"补回说明3；或在每道无标签题前补标签。二选一，不要留空。",
+      impact:"使用规则不清",
+      marks:[{p:1, box:[50,98,545,180]}],
+      focus:1,
+      tags:"说明3 补充练习 无标签 预习 课堂 Q3 Q7 Q22 Q26 Q29 Q34"
+    },
+    {
+      id:"06", sev:"p1", cat:"文字标点",
+      title:"“正方形”应为“正方体”",
+      pageLabel:"P15", loc:"课后巩固 第4题",
+      finding:"“一个正方形的表面上分别写着连续的 6 个正整数……每两个相对面……”——正方形没有“相对面”；配图也是正方体。应为“正方体”。",
+      fix:"改为“一个正方体的表面上……”。",
+      impact:"题干歧义",
+      marks:[{p:15, box:[100,510,300,532]}],
+      focus:15,
+      tags:"正方形 正方体 相对面 P15 第4题"
+    },
+    {
+      id:"07", sev:"p1", cat:"文字标点",
+      title:"“亮尖”应为“笔尖”",
+      pageLabel:"P5", loc:"第3题【问题情境】",
+      finding:"“我们把画图时，亮尖的起点、终点……”中“亮尖”为错字；同句前文已两次出现“笔尖”。",
+      fix:"改为“笔尖”。",
+      impact:"错别字",
+      marks:[{p:5, box:[450,88,505,112]}],
+      focus:5,
+      tags:"亮尖 笔尖 一笔画 错别字 P5"
+    },
+    {
+      id:"08", sev:"p1", cat:"文字标点",
+      title:"“①从而出发”应为“①从面出发”",
+      pageLabel:"P3", loc:"第1题（2）",
+      finding:"与“②从顶点出发”对举，①显然应为“从面出发”。当前“从而出发”既不成词，也让推导线索断裂。",
+      fix:"改为“①从面出发：”。",
+      impact:"推导线索",
+      marks:[{p:3, box:[50,530,300,555]}],
+      focus:3,
+      tags:"从而 从面 顶点 欧拉公式 P3"
+    },
+    {
+      id:"09", sev:"p1", cat:"内容硬伤",
+      title:"第1题（4）前提与追问自相矛盾",
+      pageLabel:"P3", loc:"第1题（4）",
+      finding:"题干先说“尝试切去正方体一块后……得不到有 7 条棱的多面体”，紧接着又问“如果能切出有 7 条棱的多面体，最少需切去几块？”——前提已经否定，追问又假设肯定。",
+      fix:"改为“小明同学想切出有 7 条棱的多面体……”；或删去“得不到”三字，统一为开放探究。",
+      impact:"逻辑不通",
+      marks:[{p:3, box:[50,672,560,700]}],
+      focus:3,
+      tags:"切去 7条棱 多面体 逻辑 矛盾 P3"
+    },
+    {
+      id:"10", sev:"p1", cat:"图文规范",
+      title:"第30题选项①是立体图，不是展开图",
+      pageLabel:"P12", loc:"第30题①",
+      finding:"题干问“不是无盖正方体表面展开图的是”，选项①却画了一个立体的无盖盒，②③④才是平面展开图。选项类型不一致，答案失去区分度。",
+      fix:"把①换成真正的平面展开图；若①是题干示意图，应移出选项区并加“图1”。",
+      impact:"选项失效",
+      marks:[{p:12, box:[45,165,115,245]}],
+      focus:12,
+      tags:"无盖正方体 展开图 选项 立体图 P12 第30题"
+    },
+    {
+      id:"11", sev:"p1", cat:"图文规范",
+      title:"配图编号五套写法混用",
+      pageLabel:"P3 / P9 / P16 / P18", loc:"图号体系",
+      finding:"同一册出现“图1”“图①”“图（1）”“图(1)”“图2-1”五套编号；P16 正文写“图（1）”，图注却是“图(1)”；P18 正文写“图（2）”，图注只有“(2)”。",
+      fix:"统一为“图1 / 图2”或“图① / 图②”，子图用“图2-1”；图注与正文必须同形。",
+      impact:"检索 / 引用困难",
+      marks:[{p:16, box:[105,270,205,300]}],
+      focus:16,
+      tags:"图1 图① 图（1） 图(1) 图2-1 图注 编号"
+    },
+    {
+      id:"12", sev:"p1", cat:"图文规范",
+      title:"单位写法不统一，变量与单位粘连",
+      pageLabel:"P11–P16", loc:"单位体系",
+      finding:"同一册混用“cm”和“厘米”；“10cm、160cm、30cm、5cm、bcm、acm”均缺空格；P12 的“bcm”、P14 的“acm”把斜体变量和单位粘在一起，最易误读。",
+      fix:"统一为“10 cm”“b cm”“a cm”，中文语境统一用“厘米”或统一用“cm”，不要混排。",
+      impact:"可读性 / 规范",
+      marks:[{p:12, box:[300,238,545,262]}],
+      focus:12,
+      tags:"cm 厘米 单位 空格 bcm acm 10cm 160cm 30cm"
+    },
+    {
+      id:"13", sev:"p1", cat:"文字标点",
+      title:"两处句读打断句子",
+      pageLabel:"P11 / P13", loc:"第27题 / 第31题②",
+      finding:"第27题以“体积之比是”直接结束，缺句号 / 问号；第31题②“如果 a=30cm，b=5cm．则该长方体纸盒的体积为……”用句号切断“如果……则……”的条件句。",
+      fix:"第27题补“______．”；第31题②把“．则”改为“，则”。",
+      impact:"阅读节奏",
+      marks:[{p:11, box:[135,112,260,135]},{p:13, box:[50,480,560,505]}],
+      focus:13,
+      tags:"句号 标点 体积之比 5cm 则 第27题 第31题"
+    },
+    {
+      id:"14", sev:"p2", cat:"图文规范",
+      title:"填空横线长短悬殊",
+      pageLabel:"P9 / P14 / P17–P18", loc:"答题横线",
+      finding:"可见横线从 26 pt（P9 第19题）到 105 pt（P14 第32题），相差约 4 倍；X 系列又出现只够写 1–2 个字符的短线。同一份讲义应使用同一套横线。",
+      fix:"建立 2–3 种标准横线（短 / 中 / 长），按答案长度选用，不要逐题手拉。",
+      impact:"作答空间不均",
+      marks:[{p:14, box:[300,90,560,112]}],
+      focus:14,
+      tags:"横线 填空 下划线 26pt 105pt 答题"
+    },
+    {
+      id:"15", sev:"p2", cat:"图文规范",
+      title:"P1 表格“棱柱”说明被截断，示意图被裁切",
+      pageLabel:"P1", loc:"基础知识点二 · 常见几何体表",
+      finding:"“底面为 n 边形的棱柱叫 n 棱”末尾缺“柱”；右侧斜棱柱示意图越过单元格边界，右端被裁掉。这是表格行高 / 图片尺寸造成的。",
+      fix:"补“柱”字，缩小或重新裁切斜棱柱图，确保完整落在单元格内。",
+      impact:"知识不完整",
+      marks:[{p:1, box:[65,315,370,390]}],
+      focus:1,
+      tags:"棱柱 n棱 截断 表格 裁切 常见几何体"
+    },
+    {
+      id:"16", sev:"p2", cat:"图文规范",
+      title:"P2 分类表缺表头",
+      pageLabel:"P2", loc:"基础知识点三 · 分类表",
+      finding:"表格直接从“按柱、锥、球、台分类 / 柱 / 圆柱、棱柱”开始，没有“分类依据 / 类别 / 举例”表头；与 P1“常见几何体”表的三列表头不一致。",
+      fix:"补一行表头，或把首列改为通栏说明。",
+      impact:"表格可读性",
+      marks:[{p:2, box:[48,33,535,70]}],
+      focus:2,
+      tags:"表头 分类依据 类别 举例 分类表 表头缺失"
+    },
+    {
+      id:"17", sev:"p2", cat:"图文规范",
+      title:"题干配图挤进选项区，无图号",
+      pageLabel:"P15", loc:"课后巩固 第1、2题",
+      finding:"第1题的给定正方体落在 A–D 选项同一行最右侧；第2题的几何体落在选项上方右侧。两图都没有“图1”之类编号，视觉上容易被当成选项 D。",
+      fix:"给题干图加图号，移到题干右侧或下方，与选项区留出至少 1 行间距。",
+      impact:"误读选项",
+      marks:[{p:15, box:[470,135,558,240]}],
+      focus:15,
+      tags:"题干图 选项 正方体 几何体 配图 位置 P15"
+    },
+    {
+      id:"18", sev:"p2", cat:"图文规范",
+      title:"第4题“图1”的骰子是空白面",
+      pageLabel:"P6", loc:"第4题",
+      finding:"题干说“六个面分别写着 1–6”，但图1 的骰子没有任何点数 / 数字，后三幅（图2）才有。图1 要么补点数，要么删掉，否则学生会以为信息缺失。",
+      fix:"给图1 补上与图2 一致的点数，或删除图1 只保留“3 次投掷”图。",
+      impact:"信息缺失",
+      marks:[{p:6, box:[42,145,90,212]}],
+      focus:6,
+      tags:"骰子 空白 图1 1-6 点数 P6 第4题"
+    },
+    {
+      id:"19", sev:"p2", cat:"图文规范",
+      title:"图注括号 / 编号与正文不同形",
+      pageLabel:"P16 / P18", loc:"第6题 / 第40题",
+      finding:"P16 正文“图（1）”，图注“图(1)”；P18 正文“图（2）/图（3）”，图注只有“(1)(2)(3)”。全角 / 半角、有无“图”字都不一致。",
+      fix:"图注统一为“图（1）”或“图1”，与正文逐字一致；子图统一“图（2）”。",
+      impact:"图文对应",
+      marks:[{p:18, box:[60,305,400,340]}],
+      focus:18,
+      tags:"图注 图(1) 图（1） 半角 全角 括号 P16 P18"
+    },
+    {
+      id:"20", sev:"p2", cat:"文字标点",
+      title:"“2026”被单独加粗",
+      pageLabel:"P10", loc:"第23题",
+      finding:"同一句里“连续完成 2 次变换”的“2”是常规字重，“连续完成 2026 次变换”的“2026”却是粗体。若为强调，应同时处理“2”；否则取消加粗。",
+      fix:"取消“2026”加粗，或把两个次数都加粗并说明强调规则。",
+      impact:"视觉噪声",
+      marks:[{p:10, box:[475,230,515,250]}],
+      focus:10,
+      tags:"2026 加粗 bold 第23题 变换 P10"
+    },
+    {
+      id:"21", sev:"p2", cat:"图文规范",
+      title:"“第1格”被换行拆成“第 / 1格”",
+      pageLabel:"P9", loc:"第21题",
+      finding:"行末只剩“第”，下一行以“1 格”开头，中文数字与量词被拆开；同一句的“第2格、第3格、第4格”都在行内。",
+      fix:"用不换行空格把“第1格”锁在一起，或微调该行字距 / 措辞。",
+      impact:"阅读停顿",
+      marks:[{p:9, box:[480,605,560,650]}],
+      focus:9,
+      tags:"第1格 换行 断行 量词 第21题 P9"
+    },
+    {
+      id:"22", sev:"p2", cat:"版面节奏",
+      title:"留白节奏忽松忽紧，答题区没有统一基线",
+      pageLabel:"P4 / P12 / P14 / P17", loc:"整页留白",
+      finding:"P12 单题后留下约 40% 空白，P4 约 25%，P8 却三题连排；P17–P18 的 X 系列又用大段空白分隔。若这些是答题区，建议标注“解答区”或统一高度；若不是，应重排。",
+      fix:"以 8–10 行为一个答题单元，统一题后留白；跨页题避免把图与题干拆开。",
+      impact:"版面节奏",
+      marks:[{p:12, box:[55,380,540,780]}],
+      focus:12,
+      tags:"留白 空白 版面 节奏 答题区 P4 P12 P14 P17"
+    }
+  ];
+
+  const SEV_LABEL = {p0:"P0", p1:"P1", p2:"P2"};
+  const SEV_TEXT = {p0:"阻断", p1:"重要", p2:"优化"};
+  const SEV_ORDER = {p0:0, p1:1, p2:2};
+
+  const state = {sev:"all", cat:"all", q:""};
+
+  function esc(s){
+    return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+  function issuesOnPage(n){
+    return ISSUES.filter(i => i.marks.some(m => m.p === n));
+  }
+  function pageSev(n){
+    const list = issuesOnPage(n);
+    if(!list.length) return "none";
+    return list.reduce((a,i) => SEV_ORDER[i.sev] < SEV_ORDER[a] ? i.sev : a, "p2");
+  }
+  function boxStyle(box){
+    return {
+      left: (box[0]/PAGE_W*100).toFixed(3)+"%",
+      top: (box[1]/PAGE_H*100).toFixed(3)+"%",
+      width: ((box[2]-box[0])/PAGE_W*100).toFixed(3)+"%",
+      height: ((box[3]-box[1])/PAGE_H*100).toFixed(3)+"%"
+    };
+  }
+  function centerStyle(box){
+    return {
+      left: (((box[0]+box[2])/2)/PAGE_W*100).toFixed(3)+"%",
+      top: (((box[1]+box[3])/2)/PAGE_H*100).toFixed(3)+"%"
+    };
+  }
+
+  /* page grid */
+  const pageGrid = document.getElementById("pageGrid");
+  pageGrid.innerHTML = PAGES.map(pg => {
+    const list = issuesOnPage(pg.n);
+    const sev = pageSev(pg.n);
+    const dots = list.map(i => {
+      const m = i.marks.find(m => m.p === pg.n);
+      const x = ((m.box[0]+m.box[2])/2)/PAGE_W*100;
+      const y = ((m.box[1]+m.box[3])/2)/PAGE_H*100;
+      return '<i class="dot '+i.sev+'" style="left:'+x.toFixed(2)+'%;top:'+y.toFixed(2)+'%" title="'+esc(i.id+' '+i.title)+'"></i>';
+    }).join("");
+    const count = list.length
+      ? '<span class="count">'+list.length+'</span>'
+      : '<span class="count ok">✓</span>';
+    return '<button class="page-card sev-'+sev+'" data-page="'+pg.n+'" aria-label="第'+pg.n+'页，'+list.length+'项问题">'
+      + '<div class="page-thumb"><img src="pages/page-'+String(pg.n).padStart(2,"0")+'.png" width="910" height="1287" alt="第'+pg.n+'页">'+count+dots+'</div>'
+      + '<div class="page-meta"><span class="pnum">P'+pg.n+'</span><span class="plabel">'+esc(pg.label)+'</span></div>'
+      + '</button>';
+  }).join("");
+
+  /* issue list */
+  const issueList = document.getElementById("issueList");
+  const resultCount = document.getElementById("resultCount");
+
+  function cardHTML(i){
+    return '<article class="issue '+i.sev+'" id="issue-'+i.id+'" data-id="'+i.id+'">'
+      + '<div class="rail"><span class="sev">'+SEV_LABEL[i.sev]+'</span><span class="ino">'+i.id+'</span></div>'
+      + '<div class="body">'
+      + '<div class="meta"><span class="cat">'+esc(i.cat)+'</span><span class="loc">'+esc(i.pageLabel)+' · '+esc(i.loc)+'</span></div>'
+      + '<h3>'+esc(i.title)+'</h3>'
+      + '<p class="finding">'+i.finding+'</p>'
+      + '<p class="fix"><span>建议</span>'+i.fix+'</p>'
+      + '<div class="actions"><button class="link" data-open="'+i.focus+'" data-issue="'+i.id+'">在页面上定位 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button><span class="impact">影响：'+esc(i.impact)+'</span></div>'
+      + '</div></article>';
+  }
+
+  function matches(i){
+    if(state.sev !== "all" && i.sev !== state.sev) return false;
+    if(state.cat !== "all" && i.cat !== state.cat) return false;
+    if(state.q){
+      const hay = (i.id+" "+i.title+" "+i.pageLabel+" "+i.loc+" "+i.finding+" "+i.fix+" "+i.cat+" "+i.tags).toLowerCase();
+      return hay.includes(state.q.toLowerCase());
+    }
+    return true;
+  }
+
+  function renderIssues(){
+    const list = ISSUES.filter(matches);
+    issueList.innerHTML = list.length ? list.map(cardHTML).join("")
+      : '<div class="empty"><b>没有匹配的问题</b>换一个关键词，或点“全部”重置筛选。</div>';
+    resultCount.textContent = list.length + " / " + ISSUES.length;
+  }
+
+  document.getElementById("sevChips").addEventListener("click", e => {
+    const b = e.target.closest("[data-sev]");
+    if(!b) return;
+    state.sev = b.dataset.sev;
+    document.querySelectorAll("#sevChips .chip").forEach(x => x.classList.toggle("active", x === b));
+    renderIssues();
+  });
+  document.getElementById("catChips").addEventListener("click", e => {
+    const b = e.target.closest("[data-cat]");
+    if(!b) return;
+    state.cat = b.dataset.cat;
+    document.querySelectorAll("#catChips .chip").forEach(x => x.classList.toggle("active", x === b));
+    renderIssues();
+  });
+  let searchTimer;
+  document.getElementById("search").addEventListener("input", e => {
+    clearTimeout(searchTimer);
+    const v = e.target.value;
+    searchTimer = setTimeout(() => { state.q = v.trim(); renderIssues(); }, 120);
+  });
+  renderIssues();
+
+  /* lightbox */
+  const lb = document.getElementById("lightbox");
+  const lbImg = document.getElementById("lbImg");
+  const lbMarks = document.getElementById("lbMarks");
+  const lbFocus = document.getElementById("lbFocus");
+  const lbBody = document.getElementById("lbBody");
+  const lbPageTitle = document.getElementById("lbPageTitle");
+  const lbNum = document.getElementById("lbNum");
+  const lbThrough = document.getElementById("lbThrough");
+  let cur = {page:1, issue:null};
+
+  function issueBy(id){ return ISSUES.find(i => i.id === id); }
+
+  function renderLightbox(){
+    const pg = cur.page;
+    const pageInfo = PAGES.find(p => p.n === pg);
+    lbImg.src = "pages/page-" + String(pg).padStart(2,"0") + ".png";
+    lbImg.alt = "第" + pg + "页";
+    lbPageTitle.textContent = "第 " + pg + " 页 · " + pageInfo.label;
+    lbNum.textContent = pg + " / 18";
+    const list = issuesOnPage(pg);
+    lbThrough.hidden = list.length > 0;
+
+    lbMarks.innerHTML = list.map(i => {
+      const m = i.marks.find(m => m.p === pg);
+      const s = centerStyle(m.box);
+      return '<i class="mark '+i.sev+'" style="left:'+s.left+';top:'+s.top+'" data-issue="'+i.id+'" title="'+esc(i.id+' '+i.title)+'"></i>';
+    }).join("");
+
+    let issue = cur.issue ? issueBy(cur.issue) : null;
+    if(issue && !issue.marks.some(m => m.p === pg)) issue = null;
+
+    if(issue){
+      const m = issue.marks.find(m => m.p === pg);
+      const s = boxStyle(m.box);
+      lbFocus.hidden = false;
+      lbFocus.style.left = s.left;
+      lbFocus.style.top = s.top;
+      lbFocus.style.width = s.width;
+      lbFocus.style.height = s.height;
+      lbFocus.dataset.label = issue.id + " · " + issue.title.slice(0, 18) + (issue.title.length > 18 ? "…" : "");
+
+      lbBody.innerHTML =
+        '<div class="sevline"><span class="s '+issue.sev+'">'+SEV_LABEL[issue.sev]+' '+SEV_TEXT[issue.sev]+'</span><span class="c">'+esc(issue.cat)+' · '+esc(issue.pageLabel)+'</span></div>'
+        + '<h4>'+esc(issue.title)+'</h4>'
+        + '<p>'+issue.finding+'</p>'
+        + '<div class="fixbox"><b>建议这样改</b>'+issue.fix+'</div>'
+        + '<div class="other"><div class="k">本页其他问题</div><div class="olist">'
+        + list.filter(i => i.id !== issue.id).map(i => '<button class="oitem '+i.sev+'" data-open-issue="'+i.id+'"><i>'+i.id+'</i><span>'+esc(i.title)+'</span></button>').join("") || '<p style="margin:0;color:var(--faint)">本页只有这一项。</p>'
+        + '</div></div>';
+    } else {
+      lbFocus.hidden = true;
+      lbBody.innerHTML = list.length
+        ? '<div class="sevline"><span class="c">本页共 '+list.length+' 项问题</span></div><h4>点击查看具体位置</h4><p>页面上的圆点对应下面每一条。也可以直接点条目，红框会自动跳过去。</p><div class="olist">'
+          + list.map(i => '<button class="oitem '+i.sev+'" data-open-issue="'+i.id+'"><i>'+i.id+'</i><span>'+esc(i.title)+'</span></button>').join("")
+          + '</div>'
+        : '<div class="sevline"><span class="s" style="color:var(--green)">PASS</span><span class="c">本页未发现格式问题</span></div><h4>这一页可以保留</h4><p>目检未发现编号、图文、标点或版式异常。内容正确性仍需学科老师复核。</p>';
+    }
+  }
+
+  function openLightbox(page, issueId){
+    cur.page = page || 1;
+    cur.issue = issueId || null;
+    renderLightbox();
+    lb.hidden = false;
+    document.body.style.overflow = "hidden";
+    document.getElementById("lbClose").focus();
+  }
+  function closeLightbox(){
+    lb.hidden = true;
+    document.body.style.overflow = "";
+  }
+  function goPage(d){
+    cur.page = ((cur.page - 1 + d + 18) % 18) + 1;
+    cur.issue = null;
+    renderLightbox();
+  }
+
+  pageGrid.addEventListener("click", e => {
+    const card = e.target.closest("[data-page]");
+    if(!card) return;
+    openLightbox(Number(card.dataset.page));
+  });
+  issueList.addEventListener("click", e => {
+    const b = e.target.closest("[data-open]");
+    if(!b) return;
+    openLightbox(Number(b.dataset.open), b.dataset.issue);
+  });
+  lb.addEventListener("click", e => {
+    if(e.target === lb) closeLightbox();
+    const mark = e.target.closest(".mark");
+    if(mark){ cur.issue = mark.dataset.issue; renderLightbox(); }
+    const o = e.target.closest("[data-open-issue]");
+    if(o){ cur.issue = o.dataset.openIssue; renderLightbox(); }
+  });
+  document.getElementById("lbClose").addEventListener("click", closeLightbox);
+  document.getElementById("lbPrev").addEventListener("click", () => goPage(-1));
+  document.getElementById("lbNext").addEventListener("click", () => goPage(1));
+  document.addEventListener("keydown", e => {
+    if(lb.hidden) return;
+    if(e.key === "Escape") closeLightbox();
+    if(e.key === "ArrowLeft") goPage(-1);
+    if(e.key === "ArrowRight") goPage(1);
+  });
+
+  /* scroll progress + reveal */
+  const progress = document.getElementById("progress");
+  function onScroll(){
+    const h = document.documentElement.scrollHeight - window.innerHeight;
+    progress.style.width = (h > 0 ? Math.min(100, window.scrollY / h * 100) : 0) + "%";
+  }
+  window.addEventListener("scroll", onScroll, {passive:true});
+  onScroll();
+
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(en => {
+      if(en.isIntersecting){ en.target.classList.add("in"); io.unobserve(en.target); }
+    });
+  }, {threshold:.06});
+  document.querySelectorAll(".reveal").forEach(el => io.observe(el));
+
+  document.getElementById("printBtn").addEventListener("click", () => window.print());
+})();
+</script>
+</body>
+</html>

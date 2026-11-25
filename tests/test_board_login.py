@@ -3,20 +3,26 @@
 
 import datetime
 import sys
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from banshu_export import (RANGE_PRESETS, UNCLASSIFIED_GROUP, class_base,
-                           class_group, collect_pages, enrich_record_groups,
-                           export_records, extract_class_names,
-                           fallback_class_names, fetch_class_names,
-                           group_board_records, match_class_name,
+from banshu_export import (RANGE_PRESETS, UNCLASSIFIED_GROUP,
+                           BatchCancelled, class_base, class_group,
+                           class_short_label, collect_pages,
+                           enrich_record_groups, export_records,
+                           extract_class_names, fallback_class_names,
+                           fetch_class_names, fetch_records,
+                           group_board_records, group_display_label,
+                           group_display_names, group_sort_key,
+                           group_term_label, match_class_name,
                            ordered_group_names, order_pages, record_time,
                            resolve_range, sanitize,
-                           sort_records_newest_first)
+                           sort_records_newest_first, term_label,
+                           term_from_time)
 from login import (LoginError, ROLE_STUDENT, ROLE_TEACHER, build_payload,
                    scrub, transform_passwd)
 
@@ -183,6 +189,20 @@ class ClassGroupingTests(unittest.TestCase):
         self.assertEqual(groups['2026027MA+31作业班'], [4])
         self.assertEqual(groups[UNCLASSIFIED_GROUP], [5])
 
+    def test_enrich_reports_chunk_progress(self):
+        records = [{'liveclass': index} for index in range(1, 61)]
+        calls = []
+
+        class FakeSession:
+            def fetch_live_info(self, ids, chunk_size=50):
+                return {item: {'groups': {'g': '2026027MA+31β1'}}
+                        for item in ids}
+
+        enrich_record_groups(FakeSession(), records,
+                             on_progress=lambda done, total:
+                             calls.append((done, total)))
+        self.assertEqual(calls, [(50, 60), (60, 60)])
+
     def test_live_info_groups_map_lessons_to_official_classes(self):
         records = [
             {'shortDesc': '26秋7MA+31（数形许）-11', 'liveclass': 101},
@@ -207,6 +227,23 @@ class ClassGroupingTests(unittest.TestCase):
         self.assertEqual(groups['2026027MA+31'], [0])
         self.assertEqual(groups['2026027MAA71'], [1])
         self.assertEqual(groups[UNCLASSIFIED_GROUP], [2])
+
+    def test_fetch_records_can_be_cancelled_between_pages(self):
+        cancel = threading.Event()
+
+        class FakeSession:
+            calls = 0
+
+            def post(self, path, body, request_timeout=None):
+                self.calls += 1
+                cancel.set()
+                return {'code': 0, 'obj': {'list': [{'id': self.calls}],
+                                            'total': 10}}
+
+        session = FakeSession()
+        with self.assertRaises(BatchCancelled):
+            fetch_records(session, 0, 1, page_size=1, cancel_event=cancel)
+        self.assertEqual(session.calls, 1)
 
     def test_newest_first_and_group_order_by_latest_lesson(self):
         records = [
@@ -325,6 +362,117 @@ class ClassGroupingTests(unittest.TestCase):
         self.assertEqual(session.timetable_calls, 0)
 
 
+class GroupLabelTests(unittest.TestCase):
+    def test_term_and_short_label(self):
+        self.assertEqual(term_label('26秋7MAA12（数形许）-11'), '26秋')
+        self.assertEqual(term_label('2026暑7MAA12 -3'), '26暑')
+        self.assertEqual(term_label('2026027MAA12'), '')
+        self.assertEqual(term_label('专题9斗课'), '')
+        self.assertEqual(class_short_label('2026027MA+31β1'), '7MA+31')
+        self.assertEqual(class_short_label('26秋7MAA12（数形许）'), '7MAA12')
+        self.assertEqual(class_short_label('2026027MA+31作业班'),
+                         '7MA+31作业班')
+
+    def test_display_label_takes_term_from_classroom_name(self):
+        records = [
+            {'shortDesc': '26秋7MA+31（数形许）-11',
+             'createTime': int(datetime.datetime(2026, 11, 1).timestamp()
+                               * 1000)},
+            {'shortDesc': '26秋7MA+31（数形许）-10',
+             'createTime': int(datetime.datetime(2026, 10, 25).timestamp()
+                               * 1000)},
+        ]
+        labels = group_display_names({'2026027MA+31': [0, 1]}, records)
+        self.assertEqual(labels['2026027MA+31'], '26秋7MA+31')
+        self.assertEqual(labels['2026027MA+31'],
+                         group_display_label('2026027MA+31', records))
+
+    def test_display_label_falls_back_to_lesson_month(self):
+        records = [
+            {'shortDesc': '专题9斗课',
+             'createTime': int(datetime.datetime(2026, 11, 1).timestamp()
+                               * 1000)},
+        ]
+        labels = group_display_names({'2026027MA+31': [0]}, records)
+        self.assertEqual(labels['2026027MA+31'], '26秋7MA+31')
+
+    def test_learned_code_season_beats_lesson_month(self):
+        records = [
+            {'shortDesc': '26秋7MAA12 -1',
+             'createTime': int(datetime.datetime(2026, 9, 10).timestamp()
+                               * 1000)},
+            # 同一期号 202602 的另一个班，课堂名没带学期，且这节在 8 月：
+            # 按月份会误判成 26暑，应该用从同批数据学到的「202602 → 秋」
+            {'shortDesc': '专题9斗课',
+             'createTime': int(datetime.datetime(2026, 8, 20).timestamp()
+                               * 1000)},
+        ]
+        labels = group_display_names({'2026027MAA12': [0],
+                                      '2026028MBB12': [1]}, records)
+        self.assertEqual(labels['2026027MAA12'], '26秋7MAA12')
+        self.assertEqual(labels['2026028MBB12'], '26秋8MBB12')
+
+    def test_term_vote_prefers_most_common_then_newest(self):
+        records = [
+            {'shortDesc': '26秋7MAA12 -1', 'createTime': 300},
+            {'shortDesc': '26秋7MAA12 -2', 'createTime': 200},
+            {'shortDesc': '25暑7MAA12 -13', 'createTime': 100},
+        ]
+        self.assertEqual(group_term_label('2026027MAA12', records), '26秋')
+        # 平票时用最新一节课的学期
+        tied = [
+            {'shortDesc': '26秋7MAA12 -1', 'createTime': 300},
+            {'shortDesc': '25暑7MAA12 -13', 'createTime': 100},
+        ]
+        self.assertEqual(group_term_label('2026027MAA12', tied), '26秋')
+        # 次数优先：25暑 出现两次，即使最新一节课是 26秋
+        mostly_summer = [
+            {'shortDesc': '26秋7MAA12 -1', 'createTime': 300},
+            {'shortDesc': '25暑7MAA12 -13', 'createTime': 100},
+            {'shortDesc': '25暑7MAA12 -14', 'createTime': 50},
+        ]
+        self.assertEqual(group_term_label('2026027MAA12', mostly_summer),
+                         '25暑')
+
+    def test_colliding_display_labels_fall_back_to_official_name(self):
+        records = [
+            {'shortDesc': '26秋7MAA12 -1', 'createTime': 100},
+            {'shortDesc': '26秋7MAA12 -2', 'createTime': 200},
+        ]
+        labels = group_display_names({'26秋7MAA12': [0],
+                                      '2026027MAA12': [1]}, records)
+        self.assertEqual(labels['26秋7MAA12'], '26秋7MAA12')
+        self.assertEqual(labels['2026027MAA12'], '2026027MAA12')
+
+    def test_order_prefers_newer_term_over_newer_lesson(self):
+        records = [
+            {'shortDesc': '25暑8MAA12 -3', 'createTime': 2000},
+            {'shortDesc': '26秋8MAA12 -1', 'createTime': 1000},
+        ]
+        groups = {'2025028MAA12': [0], '2026028MAA12': [1],
+                  UNCLASSIFIED_GROUP: []}
+        labels = {'2025028MAA12': '25暑8MAA12',
+                  '2026028MAA12': '26秋8MAA12'}
+        self.assertEqual(
+            ordered_group_names(groups, records, labels),
+            ['2026028MAA12', '2025028MAA12', UNCLASSIFIED_GROUP])
+        self.assertGreater(group_sort_key('26秋8MAA12'),
+                           group_sort_key('25暑8MAA12'))
+        self.assertGreater(group_sort_key('26秋8MAA12'),
+                           group_sort_key('26春8MAA12'))
+        self.assertGreater(group_sort_key('26春8MAA12'),
+                           group_sort_key('26寒8MAA12'))
+
+    def test_term_from_time_seasons(self):
+        def stamp(month):
+            return int(datetime.datetime(2026, month, 15).timestamp() * 1000)
+        self.assertEqual(term_from_time(stamp(7)), '26暑')
+        self.assertEqual(term_from_time(stamp(11)), '26秋')
+        self.assertEqual(term_from_time(stamp(1)), '26寒')
+        self.assertEqual(term_from_time(stamp(4)), '26春')
+        self.assertEqual(term_from_time(0), '')
+
+
 class RangeTests(unittest.TestCase):
     NOW = 1795300000000  # 固定“现在”，毫秒
 
@@ -332,11 +480,12 @@ class RangeTests(unittest.TestCase):
         return datetime.datetime.fromtimestamp(ms / 1000).strftime('%Y-%m-%d')
 
     def test_presets(self):
-        self.assertIn('全部', RANGE_PRESETS)
-        self.assertIn('自定义', RANGE_PRESETS)
+        for preset in ('全部', '最近一年', '最近三年', '自定义'):
+            self.assertIn(preset, RANGE_PRESETS)
         day = 86400 * 1000
         for preset, span in (('今天', None), ('最近7天', 7),
-                             ('最近30天', 30), ('最近一个季度', 92)):
+                             ('最近30天', 30), ('最近一个季度', 92),
+                             ('最近一年', 365), ('最近三年', 3 * 365)):
             if preset == '今天':
                 continue
             start, end = resolve_range(preset, now_ms=self.NOW)
@@ -350,10 +499,13 @@ class RangeTests(unittest.TestCase):
         self.assertGreater(end - start, 0)
         self.assertLessEqual(end - start, 86400 * 1000)
 
-    def test_all(self):
+    def test_all_is_wide_enough_to_cover_history(self):
         start, end = resolve_range('全部', now_ms=self.NOW)
-        self.assertAlmostEqual((end - start) / (86400 * 1000), 3 * 365,
+        self.assertAlmostEqual((end - start) / (86400 * 1000), 10 * 365,
                                delta=1)
+        # 「全部」必须比「最近三年」更宽，否则两个预设没有区别
+        three_start, _ = resolve_range('最近三年', now_ms=self.NOW)
+        self.assertLess(start, three_start)
 
     def test_custom_full_days(self):
         start, end = resolve_range('自定义', '2026-11-01', '2026-11-03',
