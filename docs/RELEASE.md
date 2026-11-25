@@ -7,7 +7,7 @@
 
 - 唯一版本来源是 `config.py` 的 `APP_VERSION`。
 - Git tag 必须是 `vX.Y.Z`，且满足 `v${APP_VERSION}`（例如
-  `APP_VERSION = '2.3.0'` 对应 tag `v2.3.0`）。
+  `APP_VERSION = '2.3.1'` 对应 tag `v2.3.1`）。
 - 默认规则：修复用 patch（`2.3.1`），新增用户功能用 minor（`2.4.0`），
   不兼容的大改才用 major。
 - 同步更新 `README.md` 标题、`docs/macOS使用说明.txt` 和 CI 默认版本；
@@ -46,13 +46,13 @@ chmod +x build_macos.command
 1. 提交版本号和代码改动：
    ```bash
    git add ...
-   git commit -m "release: 2.3.0（一键更新 + 发布规则 + macOS 脚本修复）"
+   git commit -m "release: 2.3.1（一键更新 + 发布规则 + macOS 脚本修复）"
    ```
 2. 打 tag 并推送：
    ```bash
-   git tag -a v2.3.0 -m "爱问云集成工具 2.3.0"
+   git tag -a v2.3.1 -m "爱问云集成工具 2.3.1"
    git push origin main
-   git push origin v2.3.0
+   git push origin v2.3.1
    ```
 3. `.github/workflows/build-release.yml` 会依次：
    - `preflight`：校验 tag == `v${APP_VERSION}`；
@@ -67,8 +67,8 @@ chmod +x build_macos.command
 验证 Release 资产：
 
 ```bash
-gh release view v2.3.0
-# 或打开 https://github.com/jokerXYH/aiwenyun-downloads/releases/tag/v2.3.0
+gh release view v2.3.1
+# 或打开 https://github.com/jokerXYH/aiwenyun-downloads/releases/tag/v2.3.1
 ```
 
 ## 4. 发布到 jokerx.top

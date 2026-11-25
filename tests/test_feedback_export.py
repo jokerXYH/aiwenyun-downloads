@@ -342,8 +342,11 @@ class RowsTests(unittest.TestCase):
         self.assertEqual(rows[1][4], '131')
         self.assertEqual(rows[1][10], '131')
         self.assertEqual(rows[1][11], '1')
+        # 生产格式化固定用 UTC+8；测试不能再依赖 runner 的本地时区。
         expected_join = datetime.datetime.fromtimestamp(
-            1794633021399 / 1000).strftime('%Y-%m-%d %H:%M:%S')
+            1794633021399 / 1000,
+            tz=datetime.timezone(datetime.timedelta(hours=8))
+        ).strftime('%Y-%m-%d %H:%M:%S')
         self.assertEqual(rows[1][20], expected_join)
 
     def test_details_drive_attendance_reward_and_mic(self):
