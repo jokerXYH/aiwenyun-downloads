@@ -45,9 +45,9 @@ class PayloadTests(unittest.TestCase):
 class VersionTests(unittest.TestCase):
     def test_compare(self):
         self.assertTrue(is_newer('2.3.0', '2.2.9'))
-        self.assertFalse(is_newer('2.2.0', '2.2.0'))
-        self.assertFalse(is_newer('2.1.9', '2.2.0'))
-        self.assertFalse(is_newer('2.2', '2.2.0'))
+        self.assertFalse(is_newer('2.2.1', '2.2.1'))
+        self.assertFalse(is_newer('2.1.9', '2.2.1'))
+        self.assertFalse(is_newer('2.2', '2.2.1'))
 
 
 class FixedUrlTests(unittest.TestCase):
@@ -58,7 +58,7 @@ class FixedUrlTests(unittest.TestCase):
             calls.append(url)
             return '{"version": "2.3.0", "url": "/app.exe"}'
 
-        result = check_for_update('2.2.0', fetcher=fetcher)
+        result = check_for_update('2.2.1', fetcher=fetcher)
         self.assertEqual(calls, [UPDATE_URL])
         self.assertEqual(result['status'], 'update')
         self.assertEqual(result['latest'], '2.3.0')

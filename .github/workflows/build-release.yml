@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, e.g. v2.1.2'
+        description: 'Release tag, e.g. v2.2.1'
         required: true
-        default: 'v2.1.2'
+        default: 'v2.2.1'
   push:
     tags:
       - 'v*'
@@ -36,6 +36,7 @@ jobs:
             --name "爱问云集成工具" `
             --icon app.ico `
             --add-data "app.ico;." `
+            --add-data "assets;assets" `
             --paths . `
             --exclude-module numpy --exclude-module lxml `
             --exclude-module pandas --exclude-module scipy --exclude-module matplotlib `
@@ -46,6 +47,8 @@ jobs:
             --hidden-import login --hidden-import banshu_export `
             --hidden-import feedback_export `
             --hidden-import homework_export `
+            --hidden-import update_checker `
+            --hidden-import theme_art `
             --hidden-import PIL `
             --hidden-import PIL.ImageDraw `
             --hidden-import PIL.ImageTk `

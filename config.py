@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 APP_NAME = '爱问云集成工具'
-APP_VERSION = '2.2.0'
+APP_VERSION = '2.2.1'
 # 爱问云客户端资源版本/完整版本：登录请求头与设备信息共用。
 # 客户端升级后可在这里更新，也可用环境变量临时覆盖，避免直接改代码。
 CLIENT_VERSION = (

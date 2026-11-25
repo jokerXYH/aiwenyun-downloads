@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import sys
 import tempfile
 import unittest
@@ -341,7 +342,9 @@ class RowsTests(unittest.TestCase):
         self.assertEqual(rows[1][4], '131')
         self.assertEqual(rows[1][10], '131')
         self.assertEqual(rows[1][11], '1')
-        self.assertEqual(rows[1][20], '2026-11-14 13:10:21')
+        expected_join = datetime.datetime.fromtimestamp(
+            1794633021399 / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        self.assertEqual(rows[1][20], expected_join)
 
     def test_details_drive_attendance_reward_and_mic(self):
         students = [
