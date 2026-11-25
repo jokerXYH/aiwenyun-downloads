@@ -16,7 +16,18 @@ if ! "$PYTHON" -c "import tkinter" >/dev/null 2>&1; then
   echo "  brew install python-tk@3.12"
   exit 1
 fi
+if ! "$PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
+  echo "需要 Python 3.10+（当前：$("$PYTHON" --version 2>&1)）。"
+  echo "项目里的 Path.write_text(newline=...) 在 3.9 上会失败。"
+  exit 1
+fi
 
+if [ -d ".venv-macos" ] && ! .venv-macos/bin/python -c \
+    'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
+  echo "现有 .venv-macos 的 Python 版本过旧。请先删除后重试："
+  echo "  rm -rf .venv-macos"
+  exit 1
+fi
 if [ ! -d ".venv-macos" ]; then
   "$PYTHON" -m venv .venv-macos
 fi
@@ -51,6 +62,8 @@ python -m PyInstaller --noconfirm --clean --windowed \
   --hidden-import banshu_export \
   --hidden-import feedback_export \
   --hidden-import homework_export \
+  --hidden-import update_checker \
+  --hidden-import update_installer \
   --hidden-import theme_art \
   --hidden-import PIL \
   --hidden-import PIL.ImageDraw \
@@ -65,9 +78,22 @@ if [ ! -d "$APP" ]; then
   exit 1
 fi
 
-# 版本号写进 Info.plist
-/usr/bin/plutil -replace CFBundleShortVersionString -string "2.2.1" "$APP/Contents/Info.plist" || true
-/usr/bin/plutil -replace CFBundleVersion -string "2.2.1" "$APP/Contents/Info.plist" || true
+# 版本号只从 config.py 读取，避免 README / Info.plist / Release tag 漂移。
+APP_VERSION="$(python -c 'from config import APP_VERSION; print(APP_VERSION)')"
+if [ -z "$APP_VERSION" ]; then
+  echo "构建失败：无法从 config.py 读取 APP_VERSION"
+  exit 1
+fi
+echo "版本：$APP_VERSION"
+/usr/bin/plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$APP/Contents/Info.plist" || true
+/usr/bin/plutil -replace CFBundleVersion -string "$APP_VERSION" "$APP/Contents/Info.plist" || true
+
+BIN="$(find "$APP/Contents/MacOS" -type f -perm -111 -print -quit)"
+if [ -z "$BIN" ]; then
+  echo "构建失败：App 内没有可执行文件"
+  exit 1
+fi
+"$BIN" --smoke-test
 
 # 没有开发者证书时做 ad-hoc 签名；有证书时用 CODESIGN_IDENTITY。
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then
@@ -90,5 +116,8 @@ ZIP="dist/aiwenyun-tools-macos-${ARCH_LABEL}.zip"
 
 echo
 echo "完成：$ZIP"
-echo "未签名/未公证的包首次打开需右键 → 打开；或执行："
+echo "未签名/未公证的包首次打开会被 Gatekeeper 拦截。macOS 15+："
+echo "  双击一次 → 系统设置 → 隐私与安全性 → 仍要打开"
+echo "或执行："
 echo "  xattr -dr com.apple.quarantine \"$APP\""
+echo "（App 移到 /Applications 后，把路径换成 /Applications/${APP_NAME}.app）"

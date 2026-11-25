@@ -54,9 +54,12 @@ from theme_art import (THEME_DESCRIPTIONS, THEME_LABELS, THEME_ORDER,
                        render_settings_icon, render_theme_preview,
                        render_user_asset, theme_key)
 from update_checker import check_for_update
+from update_installer import (can_auto_update, cleanup_stale_update_files,
+                              launch_updater, prepare_update)
 
 FONT = 'Microsoft YaHei UI'
 MONO = 'Consolas'
+UPDATE_BUTTON_TEXT = '一键更新'
 
 
 # 方向：安静的课堂工具。表面用带一点纸张暖度的中性灰，绿色只留给
@@ -976,6 +979,7 @@ class App:
         self._pending_feedback_list = False
         self._pending_feedback_auto = False
         self._update_busy = False
+        self._update_installing = False
         self.view = 'invite'
 
         self._build_ui()
@@ -1226,13 +1230,14 @@ class App:
         ttk.Label(update_head, text='当前 v%s' % APP_VERSION,
                   style='SettingsCardSub.TLabel').pack(side=RIGHT)
         ttk.Label(update_body,
-                  text='检查是否有新版本，发现更新后可打开下载页',
+                  text='Windows 打包版会自动下载、校验并安装新版本；'
+                       '更新时程序会退出并重启',
                   style='SettingsBody.TLabel', wraplength=self.px(520),
                   justify=LEFT).pack(anchor='w', pady=(self.px(4), 0))
         update_row = ttk.Frame(update_body, style='Card.TFrame')
         update_row.pack(fill=X, pady=(self.px(12), 0))
         self.update_button = ttk.Button(
-            update_row, text='检查更新', style='Settings.TButton',
+            update_row, text=UPDATE_BUTTON_TEXT, style='Settings.TButton',
             command=self.on_check_update)
         self.update_button.pack(side=LEFT)
         self.settings_status_label = ttk.Label(
@@ -1394,7 +1399,7 @@ class App:
         except Exception:  # noqa: BLE001
             pass
         if self.settings_update_status.get() and not self._update_busy:
-            self._set_update_controls('检查更新', 'normal')
+            self._set_update_controls(UPDATE_BUTTON_TEXT, 'normal')
 
     def _set_update_controls(self, text: str, state: str) -> None:
         button = getattr(self, 'update_button', None)
@@ -3704,6 +3709,12 @@ class App:
                     self._refresh_feedback_state()
                 elif kind == 'update_checked':
                     self._finish_update_check(payload)
+                elif kind == 'update_progress':
+                    self._on_update_progress(payload)
+                elif kind == 'update_ready':
+                    self._on_update_ready(payload)
+                elif kind == 'update_failed':
+                    self._on_update_failed(payload)
                 elif kind == 'canceled':
                     panel = self._active_progress()
                     if self._busy_kind == 'invite':
@@ -4712,11 +4723,14 @@ class App:
                 pass
         self._refresh_feedback_state()
 
-    # ---------- 更新检查 ----------
+    # ---------- 一键更新 ----------
     def on_check_update(self) -> None:
-        """设置里的「检查更新」入口。"""
+        """设置里的「一键更新」入口。"""
 
         if self._update_busy:
+            return
+        if self.busy.get():
+            messagebox.showwarning(APP_NAME, '正在导出，请完成后再更新。')
             return
         self._update_busy = True
         self._set_update_controls('检查中…', 'disabled')
@@ -4739,16 +4753,20 @@ class App:
 
     def _finish_update_check(self, payload) -> None:
         self._update_busy = False
-        self._set_update_controls('检查更新', 'normal')
+        self._set_update_controls(UPDATE_BUTTON_TEXT, 'normal')
         if not isinstance(payload, dict):
             payload = {'status': 'error', 'message': '更新检查返回格式不正确。'}
         status = payload.get('status')
         if status == 'update':
-            self.settings_update_status.set(
-                '发现新版本 v%s，可在弹窗里打开下载页。'
-                % payload.get('latest'))
+            latest = payload.get('latest')
+            self.settings_update_status.set('发现新版本 v%s。' % latest)
             self.status.set('发现新版本 v%s（当前 v%s）。'
-                            % (payload.get('latest'), payload.get('current')))
+                            % (latest, payload.get('current')))
+            if can_auto_update(payload):
+                self._prompt_install_update(payload)
+                return
+            self.settings_update_status.set(
+                '发现新版本 v%s；当前环境请手动下载。' % latest)
         elif status == 'latest':
             self.settings_update_status.set(
                 '当前已是最新版本 v%s。' % payload.get('current'))
@@ -4758,6 +4776,106 @@ class App:
                 '检查失败：%s' % (payload.get('message') or '无法连接更新服务器'))
             self.status.set('检查更新失败。')
         self._show_update_result(payload)
+
+    def _prompt_install_update(self, result: dict) -> None:
+        latest = str(result.get('latest') or '')
+        current = str(result.get('current') or APP_VERSION)
+        notes = str(result.get('notes') or '').strip()
+        message = (
+            '发现新版本 v%s（当前 v%s）。\n\n'
+            '将自动下载、校验并替换当前程序，随后自动重启。\n'
+            '更新期间程序会退出，请先完成正在进行的导出。'
+            % (latest, current))
+        if notes:
+            message += '\n\n更新说明：\n' + notes[:800]
+        if not messagebox.askyesno(APP_NAME, message):
+            self.settings_update_status.set('已取消更新，当前 v%s。' % current)
+            self.status.set('已取消更新。')
+            return
+        if self.busy.get():
+            messagebox.showwarning(APP_NAME, '正在导出，请完成后再更新。')
+            self.settings_update_status.set('当前有导出任务，更新已取消。')
+            return
+        self._start_update_install(result)
+
+    def _start_update_install(self, result: dict) -> None:
+        self._update_busy = True
+        self._set_update_controls('更新中…', 'disabled')
+        latest = str(result.get('latest') or '')
+        self.settings_update_status.set('正在下载 v%s…' % latest)
+        self.status.set('正在下载更新 v%s…' % latest)
+        self.worker = threading.Thread(
+            target=self._update_install_work, args=(result,), daemon=True)
+        self.worker.start()
+
+    def _update_install_work(self, result: dict) -> None:
+        package = None
+        last_percent = [-1]
+
+        def progress(done: int, total: int) -> None:
+            percent = int(done * 100 / total) if total > 0 else -1
+            if percent == last_percent[0]:
+                return
+            last_percent[0] = percent
+            self._post('update_progress', {
+                'version': result.get('latest'),
+                'done': done,
+                'total': total,
+                'percent': percent,
+            })
+
+        try:
+            package = prepare_update(result, progress=progress)
+            launch_updater(
+                package, expected_version=str(result.get('latest') or ''))
+        except Exception as error:  # noqa: BLE001
+            if package is not None:
+                try:
+                    package.unlink()
+                    package.parent.rmdir()
+                except OSError:
+                    pass
+            self._post('update_failed', {'message': str(error)})
+            return
+        self._post('update_ready', {'version': result.get('latest')})
+
+    def _on_update_progress(self, payload) -> None:
+        if not isinstance(payload, dict):
+            return
+        version = str(payload.get('version') or '')
+        percent = payload.get('percent')
+        if isinstance(percent, int) and percent >= 0:
+            text = '正在下载 v%s… %d%%' % (version, percent)
+        else:
+            text = '正在下载 v%s…' % version
+        self.settings_update_status.set(text)
+        self.status.set(text)
+
+    def _on_update_ready(self, payload) -> None:
+        version = ''
+        if isinstance(payload, dict):
+            version = str(payload.get('version') or '')
+        self.settings_update_status.set('下载完成，正在安装 v%s…' % version)
+        self.status.set('正在安装更新，程序即将重启…')
+        self._set_update_controls('正在重启…', 'disabled')
+        self.root.after(900, self._exit_for_update)
+
+    def _on_update_failed(self, payload) -> None:
+        self._update_busy = False
+        self._set_update_controls(UPDATE_BUTTON_TEXT, 'normal')
+        message = '更新失败。'
+        if isinstance(payload, dict):
+            message = str(payload.get('message') or message)
+        self.settings_update_status.set('更新失败：%s' % message)
+        self.status.set('更新失败。')
+        messagebox.showerror(APP_NAME, '自动更新失败：\n%s' % message)
+
+    def _exit_for_update(self) -> None:
+        self._update_installing = True
+        try:
+            self.root.destroy()
+        except Exception:  # noqa: BLE001
+            pass
 
     def _show_update_result(self, result: dict) -> None:
         status = str(result.get('status') or 'error')
@@ -4822,7 +4940,7 @@ class App:
 
         ttk.Button(actions, text='关闭', style='Secondary.TButton',
                    command=win.destroy).pack(side=RIGHT)
-        target_url = download or server
+        target_url = server or download
         if status == 'update' and target_url:
             def open_download() -> None:
                 try:
@@ -4847,6 +4965,12 @@ class App:
             pass
 
     def on_close(self) -> None:
+        if self._update_installing:
+            self.root.destroy()
+            return
+        if self._update_busy:
+            if not messagebox.askyesno(APP_NAME, '正在更新，确定要退出吗？'):
+                return
         if self.busy.get():
             if not messagebox.askyesno(APP_NAME, '正在导出，确定要退出吗？'):
                 return
@@ -4953,6 +5077,22 @@ class App:
 
 
 def main() -> int:
+    if '--version-file' in sys.argv:
+        # 更新器用它探测新包的版本，避免把错误版本替换进来。
+        try:
+            index = sys.argv.index('--version-file')
+            target = Path(sys.argv[index + 1])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(APP_VERSION, encoding='utf-8')
+        except Exception:  # noqa: BLE001
+            return 2
+        return 0
+
+    try:
+        cleanup_stale_update_files()
+    except Exception:  # noqa: BLE001
+        pass
+
     if '--ssl-test' in sys.argv:
         # CI/诊断用：用打包后的证书上下文真实连一次业务主机。
         import socket

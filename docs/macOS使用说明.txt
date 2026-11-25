@@ -1,4 +1,4 @@
-爱问云集成工具 2.2.1 · macOS 使用说明
+爱问云集成工具 2.3.0 · macOS 使用说明
 ========================================
 
 一、先确认 Mac 芯片
@@ -6,6 +6,12 @@
 - Apple M1 / M2 / M3 / M4：用 aiwenyun-invite-macos-arm64.zip
 - Intel Core i5 / i7 / i9：用 aiwenyun-invite-macos-x64.zip
 拿不准就先试 arm64；打不开再换 x64。
+
+服务器下载页使用 aiwenyun-invite-*.zip 文件名；GitHub Release 使用
+aiwenyun-tools-*.zip，两个文件名内容相同，任选一个即可。
+
+macOS 版不会自动替换自身；「一键更新」在 macOS 上只会打开下载页。
+Windows 打包版才支持自动下载、校验、替换并重启。
 
 二、第一次打开（macOS 会拦截）
 这个软件没有购买苹果开发者签名，所以第一次打开会被系统拦截，
@@ -39,7 +45,7 @@ xattr -dr com.apple.quarantine "/Applications/爱问云集成工具.app"
 
 四、常见问题
 1. 提示“登录态验证失败 / CERTIFICATE_VERIFY_FAILED”
-   - 确认用的是 2.2.1 版（窗口标题有版本号）。
+   - 确认用的是 2.3.0 版（窗口标题有版本号）。
    - 2.1.1 起已内置证书；如果还报错，双击“诊断.command”，
      把生成的“诊断日志.txt”发回来。
      如果双击没反应，打开“终端”执行：

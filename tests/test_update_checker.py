@@ -41,6 +41,67 @@ class PayloadTests(unittest.TestCase):
         with self.assertRaises(UpdateError):
             parse_update_payload('{"message": "ok"}')
 
+    def test_json_checksum_fields(self):
+        data = parse_update_payload(json.dumps({
+            'version': '2.3.0',
+            'url': 'https://cdn.example.com/app.exe',
+            'sha256_url': 'https://cdn.example.com/app.sha256',
+            'sha256': 'a' * 64,
+        }))
+        self.assertEqual(data['checksum_url'],
+                         'https://cdn.example.com/app.sha256')
+        self.assertEqual(data['sha256'], 'a' * 64)
+
+
+class HtmlPayloadTests(unittest.TestCase):
+    HTML = '''
+        <html><body>
+        <span class="version-badge">v2.3.0</span>
+        <a href="https://cdn.example.com/win/app-windows-x64.exe?v=2.3.0">
+          Windows
+        </a>
+        <a href="https://cdn.example.com/win/app-windows-x64.sha256?v=2.3.0">
+          SHA-256
+        </a>
+        <a href="https://cdn.example.com/mac/app-macos-arm64.zip">macOS</a>
+        </body></html>
+    '''
+
+    def test_html_picks_windows_exe_and_checksum(self):
+        data = parse_update_payload(
+            self.HTML, base_url='https://example.com/software/')
+        self.assertEqual(data['version'], '2.3.0')
+        self.assertEqual(
+            data['download_url'],
+            'https://cdn.example.com/win/app-windows-x64.exe?v=2.3.0')
+        self.assertEqual(
+            data['checksum_url'],
+            'https://cdn.example.com/win/app-windows-x64.sha256?v=2.3.0')
+
+    def test_html_without_exe_does_not_invent_package(self):
+        data = parse_update_payload(
+            '<span class="version-badge">v2.3.0</span>'
+            '<a href="/mac/app.zip">macOS</a>')
+        self.assertEqual(data['download_url'], '')
+        self.assertEqual(data['checksum_url'], '')
+
+    def test_html_multiple_unmarked_exes_does_not_guess(self):
+        data = parse_update_payload(
+            '<span class="version-badge">v2.3.0</span>'
+            '<a href="/a.exe">A</a><a href="/b.exe">B</a>')
+        self.assertEqual(data['download_url'], '')
+
+    def test_check_exposes_package_and_checksum(self):
+        result = check_for_update('2.2.1',
+                                  fetcher=lambda _url: self.HTML)
+        self.assertEqual(result['status'], 'update')
+        self.assertEqual(
+            result['download_url'],
+            'https://cdn.example.com/win/app-windows-x64.exe?v=2.3.0')
+        self.assertEqual(
+            result['checksum_url'],
+            'https://cdn.example.com/win/app-windows-x64.sha256?v=2.3.0')
+
 
 class VersionTests(unittest.TestCase):
     def test_compare(self):

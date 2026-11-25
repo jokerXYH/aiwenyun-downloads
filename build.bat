@@ -29,6 +29,7 @@ pyinstaller --noconfirm --clean --onefile --windowed ^
   --hidden-import feedback_export ^
   --hidden-import homework_export ^
   --hidden-import update_checker ^
+  --hidden-import update_installer ^
   --hidden-import theme_art ^
   --hidden-import PIL ^
   --hidden-import PIL.ImageDraw ^

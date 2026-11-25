@@ -1,12 +1,15 @@
 """软件更新检查：服务器地址与检查接口都由用户配置，不写死协议路径。
 
 默认把检查接口返回的 JSON/文本里常见的版本字段解析出来；服务器端也可以
-直接返回纯版本号文本。更新包只负责打开下载地址，不在客户端自动安装。
+直接返回纯版本号文本。HTML 下载页会额外提取 Windows exe 和同名 .sha256
+校验链接，交给 update_installer 完成下载、校验、替换和重启。
 """
 
 from __future__ import annotations
 
+import html
 import json
+import posixpath
 import re
 import urllib.parse
 import urllib.request
@@ -23,9 +26,14 @@ _VERSION_KEYS = ('version', 'versionName', 'latest_version', 'latestVersion',
 _DOWNLOAD_KEYS = ('download_url', 'downloadUrl', 'url', 'download',
                   'html_url', 'htmlUrl', 'release_url', 'releaseUrl',
                   'page_url', 'pageUrl')
+_CHECKSUM_URL_KEYS = ('sha256_url', 'sha256Url', 'checksum_url',
+                      'checksumUrl', 'sha256sum_url', 'sha256sumUrl')
+_CHECKSUM_KEYS = ('sha256', 'sha256sum', 'sha256_hash', 'checksum')
 _NOTES_KEYS = ('notes', 'releaseNotes', 'release_notes', 'changelog',
                'body', 'description')
 _NESTED_KEYS = ('data', 'latest', 'release', 'result', 'obj')
+_HREF_RE = re.compile(
+    r'''(?:href|data-href|data-url)\s*=\s*["']([^"']+)["']''', re.IGNORECASE)
 
 
 class UpdateError(RuntimeError):
@@ -54,6 +62,66 @@ def _first(payload: Any, keys: tuple[str, ...]) -> str:
     return ''
 
 
+def _html_links(raw: str, base_url: str) -> list[str]:
+    """提取 HTML 里的候选链接，保留页面顺序。"""
+
+    links: list[str] = []
+    seen: set[str] = set()
+    for match in _HREF_RE.finditer(raw):
+        value = html.unescape(match.group(1)).strip()
+        if not value or value.startswith(('#', 'javascript:', 'mailto:')):
+            continue
+        url = urllib.parse.urljoin(base_url, value)
+        if url not in seen:
+            seen.add(url)
+            links.append(url)
+    return links
+
+
+def _select_windows_package(links: list[str]) -> str:
+    """从下载页里选 Windows exe；没有 Windows 标记时只在唯一 exe 时采用。"""
+
+    exes = [url for url in links
+            if urllib.parse.urlparse(url).path.lower().endswith('.exe')]
+    if not exes:
+        return ''
+
+    windows = [
+        url for url in exes
+        if 'windows' in urllib.parse.urlparse(url).path.lower()
+        or 'win64' in urllib.parse.urlparse(url).path.lower()
+    ]
+    if not windows:
+        return exes[0] if len(exes) == 1 else ''
+
+    def score(url: str) -> tuple[int, int]:
+        path = urllib.parse.urlparse(url).path.lower()
+        return (
+            1 if 'x64' in path or 'amd64' in path else 0,
+            0 if 'mac' in path or 'darwin' in path else 1,
+        )
+
+    ranked = max(enumerate(windows),
+                 key=lambda item: (score(item[1]), -item[0]))
+    return ranked[1]
+
+
+def _select_checksum(links: list[str], package_url: str) -> str:
+    sums = [url for url in links
+            if '.sha256' in urllib.parse.urlparse(url).path.lower()]
+    if not sums:
+        return ''
+    if package_url:
+        package_stem = posixpath.splitext(posixpath.basename(
+            urllib.parse.urlparse(package_url).path))[0].lower()
+        for url in sums:
+            checksum_stem = posixpath.splitext(posixpath.basename(
+                urllib.parse.urlparse(url).path))[0].lower()
+            if package_stem and checksum_stem == package_stem:
+                return url
+    return sums[0] if len(sums) == 1 else ''
+
+
 def parse_update_payload(text: str, base_url: str = '') -> dict:
     """从 JSON 或纯文本响应中提取版本、下载地址和更新说明。
 
@@ -71,7 +139,16 @@ def parse_update_payload(text: str, base_url: str = '') -> dict:
 
     version = _first(payload, _VERSION_KEYS) if payload is not None else ''
     download = _first(payload, _DOWNLOAD_KEYS) if payload is not None else ''
+    checksum_url = (
+        _first(payload, _CHECKSUM_URL_KEYS) if payload is not None else '')
+    checksum = _first(payload, _CHECKSUM_KEYS) if payload is not None else ''
     notes = _first(payload, _NOTES_KEYS) if payload is not None else ''
+    if payload is None:
+        links = _html_links(raw, base_url)
+        if not download:
+            download = _select_windows_package(links)
+        if not checksum_url:
+            checksum_url = _select_checksum(links, download)
     if not version:
         # 下载页是 HTML 时优先读版本徽标 / version 字段，避免把
         # viewport 里的 1.0 之类数字误当成软件版本。
@@ -100,9 +177,13 @@ def parse_update_payload(text: str, base_url: str = '') -> dict:
         version = version[1:].strip()
     if download:
         download = urllib.parse.urljoin(base_url, download)
+    if checksum_url:
+        checksum_url = urllib.parse.urljoin(base_url, checksum_url)
     return {
         'version': version,
         'download_url': download,
+        'checksum_url': checksum_url,
+        'sha256': checksum,
         'notes': notes,
         'raw': raw,
     }
@@ -156,6 +237,8 @@ def check_for_update(current_version: str,
         'current': str(current_version or '').strip(),
         'latest': latest,
         'download_url': download,
+        'checksum_url': data.get('checksum_url') or '',
+        'sha256': data.get('sha256') or '',
         'server_url': UPDATE_URL,
         'check_url': UPDATE_URL,
         'notes': data.get('notes') or '',

@@ -1,4 +1,4 @@
-# 爱问云集成工具 2.2.1
+# 爱问云集成工具 2.3.0
 
 Windows / macOS 下载与源码。用于读取本机已登录的爱问云客户端，导出实时课堂邀请码 Excel、板书 PDF 和历史课堂专注度反馈 CSV。
 
@@ -15,6 +15,16 @@ Windows / macOS 下载与源码。用于读取本机已登录的爱问云客户�
 | macOS Intel | `aiwenyun-tools-macos-x64.zip` |
 
 每个 Release 同时提供 `.sha256` 校验文件。
+
+## 2.3.0 更新
+
+- Windows 打包版新增「一键更新」：发现新版本后自动下载、校验 SHA-256、
+  探测新包版本、退出旧程序、替换 exe 并重启。
+- 更新成功后删除旧 exe 和临时更新包，不保留 `.bak` / `.old-*` 备份；
+  失败日志保留在 `%TEMP%\aiwenyun-update.log`。
+- macOS 构建脚本改为从 `config.py` 读取版本号，避免版本号漂移；
+  同时修正 macOS 15+ Gatekeeper 提示文案。
+- 发布规则见 [`docs/RELEASE.md`](docs/RELEASE.md)。
 
 ## 功能
 
@@ -150,33 +160,52 @@ macOS 需要关闭并重新打开爱问云，仅在本机 `127.0.0.1:9222` 开�
 
 ## 软件更新
 
-右上角有紧凑的「检查更新」入口，固定检查本软件现有下载页，运行时不读取或
-改写其他地址。
+设置页有「一键更新」入口，固定检查本软件现有下载页，运行时不读取或改写
+其他地址。
 
 - 检查地址固定为 `UPDATE_URL`（`config.py` 中唯一一处定义），指向
   <https://jokerx.top/projects/software/aiwenyun/>；
-- 目前兼容下载页返回 JSON（读取常见字段 `version` / `url` / `notes`）或
-  页面/纯文本里出现版本号；
-- 有新版本时显示当前版本、最新版本和更新说明，并提供「打开下载页」；
-  没有新版本时明确提示当前已是最新版本；
-- 只打开下载地址，不自动下载或安装更新包。
+- 兼容下载页返回 JSON（读取 `version` / `url` / `sha256` / `notes`）或
+  HTML 下载页；HTML 会提取 Windows exe 和同名 `.sha256` 链接；
+- Windows 打包版发现新版本后，确认一次即自动下载、校验 SHA-256、探测新包
+  版本、退出旧程序、替换 exe 并重启；更新成功后删除旧 exe 和临时更新包，
+  不保留 `.bak` / 备份，失败日志保留在 `%TEMP%\aiwenyun-update.log`；
+- 源码运行、macOS、或服务器没有提供 exe / 校验值时，只提示并打开下载页，
+  不自动安装；
+- 新版本重启后，标题栏和设置页显示的版本应与服务器下载页版本一致。
 
 ## 安全
 
 - token / 密码只在本进程内存中使用，不写日志、不写导出文件。
 - 错误信息中的 `access_token` 自动脱敏。
 - 只允许 HTTPS 业务主机，使用系统/内置证书校验，不跟随重定向。
+- 更新包只从 HTTPS 下载，必须通过服务器 `.sha256` 校验和 PE 头检查；
+  替换脚本不保留旧版本备份。
 - 不读取 cookie、聊天记录或通讯录；账号登录会读取本机客户端设备 ID。
 - 只读操作：不提交、不批改、不改动任何反馈或课堂数据。
 
 ## 源码与构建
 
-源码在本仓库根目录。Windows 使用 `build.bat`；macOS 使用 `build_macos.command`。
+源码在本仓库根目录。Windows 使用 `build.bat`；macOS 使用
+`build_macos.command`（需要 macOS、Python 3.10+ 且带 Tkinter）：
+
+```bash
+chmod +x build_macos.command   # 首次或 zip 解压后
+./build_macos.command
+```
+
+脚本会生成 `dist/aiwenyun-tools-macos-<arch>.zip` 和对应 `.sha256`，
+并从 `config.py` 读取 `APP_VERSION` 写入 `Info.plist`。未签名包首次打开
+按 README 的 Gatekeeper 步骤处理；详细说明见 [`docs/RELEASE.md`](docs/RELEASE.md)。
+
 GitHub Actions 会分别在 Windows、macOS arm64、macOS x64 上构建并发布 Release：
 
 ```text
 .github/workflows/build-release.yml
 ```
+
+发布到 GitHub Release 和 jokerx.top 的完整规则见
+[`docs/RELEASE.md`](docs/RELEASE.md)。
 
 本地源码运行：
 
