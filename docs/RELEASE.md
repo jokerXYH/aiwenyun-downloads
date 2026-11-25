@@ -54,7 +54,8 @@ chmod +x build_macos.command
    git push origin main
    git push origin v2.3.1
    ```
-3. `.github/workflows/build-release.yml` 会依次：
+3. `.github/workflows/build-release.yml` 使用同一个 tag 的 concurrency，
+   重复触发会取消旧 run，避免两个构建同时覆盖 Release。随后依次：
    - `preflight`：校验 tag == `v${APP_VERSION}`；
    - Windows：单测、PyInstaller、`--smoke-test` / `--ssl-test`；
    - macOS arm64 / x64：单测、`build_macos.command`、包内 smoke/ssl；
