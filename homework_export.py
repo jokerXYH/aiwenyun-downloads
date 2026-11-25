@@ -343,7 +343,8 @@ def write_csv(path: Path, homework: dict, students: list[dict]) -> int:
         lines.append(','.join(_csv_cell(cell) for cell in row))
     # 末尾不加多余换行：平台的文件最后一行后面就是 EOF
     text = '\r\n'.join(lines)
-    path.write_text(text, encoding='utf-8-sig', newline='')
+    with path.open('w', encoding='utf-8-sig', newline='') as handle:
+        handle.write(text)
     return len(rows)
 
 

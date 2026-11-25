@@ -13,9 +13,9 @@ from feedback_export import (ATTEND_PATH, CONSOLIDATION, CSV_HEADER, HISTORY,
                              WATCH_PATH, build_feedback_bundles,
                              build_feedback_rows, chinese_number,
                              export_bundle, export_feedback_bundles,
-                             feedback_class_label, homework_kind,
-                             homework_lesson, parse_lesson_number,
-                             write_feedback_csv)
+                             feedback_class_label, feedback_component_name,
+                             homework_kind, homework_lesson,
+                             parse_lesson_number, write_feedback_csv)
 
 
 def make_student(name, login, uid, group, sign=0, total=0):
@@ -197,6 +197,70 @@ class BundleAssemblyTests(unittest.TestCase):
         self.assertEqual([bundle['lesson'] for bundle in bundles], [11, 4])
         self.assertNotIn('7M备课', {bundle['class'] for bundle in bundles})
 
+    def test_history_only_still_matches_single_class_code(self):
+        bundles = build_feedback_bundles(
+            [make_history(11)], [], class_names=['2026027MA+31'])
+        self.assertEqual(len(bundles), 1)
+        self.assertEqual(bundles[0]['class'], '7MA+31')
+        self.assertEqual(bundles[0]['components'][HISTORY]['shortDesc'],
+                         '26秋7MA+31（数形许）-11')
+
+    def test_same_class_name_in_two_terms_stays_separate(self):
+        history = [
+            {'shortDesc': '26暑7MA+31（数形许）-12',
+             '_groupNames': ['2026017MA+31β1'],
+             'liveclass': 101,
+             'fileCommon': {'recordId': 'summer12',
+                            'createTime': 1783000000000}},
+            {'shortDesc': '26秋7MA+31（数形许）-12',
+             '_groupNames': ['2026027MA+31β1'],
+             'liveclass': 102,
+             'fileCommon': {'recordId': 'autumn12',
+                            'createTime': 1794633600000}},
+        ]
+        homework = [
+            {'zuoyeId': 'summer-preview12',
+             'title': '【数·课前预习】专题十二',
+             'groupName': '2026017MA+31作业班',
+             'sortTime': 1783000000000},
+            {'zuoyeId': 'summer-consolidation11',
+             'title': '【数·课后巩固】专题十一',
+             'groupName': '2026017MA+31作业班',
+             'sortTime': 1783000000000},
+            {'zuoyeId': 'autumn-preview12',
+             'title': '【数·课前预习】专题十二',
+             'groupName': '2026027MA+31作业班',
+             'sortTime': 1794633600000},
+            {'zuoyeId': 'autumn-consolidation11',
+             'title': '【数·课后巩固】专题十一',
+             'groupName': '2026027MA+31作业班',
+             'sortTime': 1794633600000},
+        ]
+        bundles = build_feedback_bundles(
+            history, homework,
+            class_names=['2026017MA+31', '2026027MA+31'])
+        self.assertEqual(len(bundles), 2)
+        by_class = {bundle['class']: bundle for bundle in bundles}
+        self.assertEqual(set(by_class), {'26暑7MA+31', '26秋7MA+31'})
+
+        summer = by_class['26暑7MA+31']
+        autumn = by_class['26秋7MA+31']
+        self.assertEqual(summer['components'][HISTORY]['fileCommon']
+                         ['recordId'], 'summer12')
+        self.assertEqual(autumn['components'][HISTORY]['fileCommon']
+                         ['recordId'], 'autumn12')
+        self.assertEqual(summer['components'][PREVIEW]['zuoyeId'],
+                         'summer-preview12')
+        self.assertEqual(autumn['components'][PREVIEW]['zuoyeId'],
+                         'autumn-preview12')
+        self.assertEqual(summer['components'][CONSOLIDATION]['zuoyeId'],
+                         'summer-consolidation11')
+        self.assertEqual(autumn['components'][CONSOLIDATION]['zuoyeId'],
+                         'autumn-consolidation11')
+        self.assertEqual(
+            feedback_component_name(summer, PREVIEW),
+            '26暑7MA+31-【数·课前预习】专题十二.csv')
+
     def test_only_lesson_11_consolidation_marks_lesson_12_missing(self):
         bundles = build_feedback_bundles(
             [], [make_homework(11, CONSOLIDATION)])
@@ -232,12 +296,12 @@ class BundleExportTests(unittest.TestCase):
             self.assertTrue(lesson11.is_dir())
             self.assertTrue(lesson4.is_dir())
             self.assertTrue(lesson12.is_dir())
-            self.assertTrue((lesson11 / '课前预习-【数·课前预习】专题十一.csv').is_file())
-            self.assertTrue((lesson11 / '课后巩固-【数·课后巩固】专题十.csv').is_file())
+            self.assertTrue((lesson11 / '7MA+31-【数·课前预习】专题十一.csv').is_file())
+            self.assertTrue((lesson11 / '7MA+31-【数·课后巩固】专题十.csv').is_file())
             self.assertTrue((lesson11 /
                              '历史课堂权限-第十一节课统计报告.csv').is_file())
-            self.assertTrue((lesson4 / '课前预习-【数·课前预习】专题四.csv').is_file())
-            self.assertTrue((lesson4 / '课后巩固-【数·课后巩固】专题三.csv').is_file())
+            self.assertTrue((lesson4 / '7MA+31-【数·课前预习】专题四.csv').is_file())
+            self.assertTrue((lesson4 / '7MA+31-【数·课后巩固】专题三.csv').is_file())
             self.assertTrue((lesson4 /
                              '历史课堂权限-第四节课统计报告.csv').is_file())
             self.assertTrue(lesson12.is_dir())
@@ -258,6 +322,33 @@ class BundleExportTests(unittest.TestCase):
                 (class_root / '第十一节课反馈').is_dir())
             self.assertFalse((class_root / '7MA+31').exists())
 
+    def test_same_name_terms_keep_separate_folders_in_class_root(self):
+        history = [
+            {'shortDesc': '26暑7MA+31（数形许）-12',
+             '_groupNames': ['2026017MA+31β1'],
+             'liveclass': 101,
+             'fileCommon': {'recordId': 'summer12',
+                            'createTime': 1783000000000}},
+            {'shortDesc': '26秋7MA+31（数形许）-12',
+             '_groupNames': ['2026027MA+31β1'],
+             'liveclass': 102,
+             'fileCommon': {'recordId': 'autumn12',
+                            'createTime': 1794633600000}},
+        ]
+        bundles = build_feedback_bundles(history, [])
+        with tempfile.TemporaryDirectory() as directory:
+            class_root = Path(directory) / '7MA+31'
+            result = export_feedback_bundles(
+                FakeSession(), bundles, class_root)
+            self.assertFalse(result['failed'])
+            history_name = '历史课堂权限-第十二节课统计报告.csv'
+            self.assertTrue(
+                (class_root / '26暑7MA+31' / '第十二节课反馈' /
+                 history_name).is_file())
+            self.assertTrue(
+                (class_root / '26秋7MA+31' / '第十二节课反馈' /
+                 history_name).is_file())
+
     def test_unselected_file_is_not_written(self):
         bundles = build_feedback_bundles(
             [make_history(11)],
@@ -272,9 +363,9 @@ class BundleExportTests(unittest.TestCase):
             keep.write_text('keep', encoding='utf-8')
             result = export_feedback_bundles(
                 FakeSession(), [bundle], out)
-            self.assertTrue((folder / '课前预习-【数·课前预习】专题十一.csv').is_file())
+            self.assertTrue((folder / '7MA+31-【数·课前预习】专题十一.csv').is_file())
             self.assertTrue((folder / '历史课堂权限-第十一节课统计报告.csv').is_file())
-            self.assertFalse((folder / '课后巩固-【数·课后巩固】专题十.csv').exists())
+            self.assertFalse((folder / '7MA+31-【数·课后巩固】专题十.csv').exists())
             self.assertTrue(keep.is_file())
             self.assertFalse(any(path.suffix.lower() == '.txt'
                                  for path in folder.rglob('*')
