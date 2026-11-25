@@ -153,18 +153,47 @@ jobs:
           cp docs/诊断.command dist/macOS-DIAGNOSE.command
       - name: List assets
         run: ls -la dist
-      - name: Create / update release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          name: 爱问云集成工具 ${{ github.event.inputs.version || github.ref_name }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          files: |
-            dist/*.exe
-            dist/*.zip
-            dist/*.sha256
-            dist/macOS-DIAGNOSE.command
+      - name: Publish release
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="$TAG"
+          echo "tag=$tag repo=$REPO"
+          release_id="$(gh api "repos/$REPO/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$tag\") | .id" | head -n1 || true)"
+          if [ -z "$release_id" ]; then
+            echo "creating draft release $tag"
+            gh release create "$tag" --draft \
+              --title "爱问云集成工具 $tag" \
+              --notes "Windows 一键更新、macOS 构建脚本修复。"
+            release_id="$(gh api "repos/$REPO/releases?per_page=100" \
+              --jq ".[] | select(.tag_name == \"$tag\") | .id" | head -n1)"
+          fi
+          if [ -z "$release_id" ]; then
+            echo "release id not found for $tag"
+            exit 1
+          fi
+          for file in dist/*; do
+            [ -f "$file" ] || continue
+            name="$(basename "$file")"
+            uploaded=0
+            for attempt in 1 2 3 4 5; do
+              if gh release upload "$tag" "$file" --clobber; then
+                uploaded=1
+                break
+              fi
+              echo "upload $name failed (attempt $attempt)"
+              sleep $((attempt * 5))
+            done
+            if [ "$uploaded" -ne 1 ]; then
+              echo "upload failed: $name"
+              exit 1
+            fi
+          done
+          gh release edit "$tag" --draft=false \
+            --title "爱问云集成工具 $tag" \
+            --notes "Windows 一键更新、macOS 构建脚本修复。"
