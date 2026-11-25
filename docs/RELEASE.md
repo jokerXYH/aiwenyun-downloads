@@ -181,4 +181,4 @@ xattr -dr com.apple.quarantine "/Applications/爱问云集成工具.app"
 - 过程记录：2.3.0 的 tag 因 macOS runner 的 UTC 时区测试失败，已改为
   UTC+8 断言；GitHub Release API 曾连续 500，发布 job 改为 `gh` 幂等
   重试后成功。2.3.0 与误带未提交反馈改动的 2.3.1 预发布 tag 已删除，
-  当前唯一发布 tag 为 `v2.3.1`。
+  本次发布 tag 为 `v2.3.1`。
