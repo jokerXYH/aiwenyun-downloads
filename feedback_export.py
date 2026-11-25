@@ -16,8 +16,9 @@ from typing import Any, Callable
 
 from banshu_export import (BatchCancelled, class_base, class_folder_label,
                            class_group, class_output_dir, group_sort_key,
-                           pick_group_base, record_group_names, record_time,
-                           sanitize)
+                           official_term_code, pick_group_base,
+                           record_group_base, record_group_names, record_time,
+                           sanitize, term_from_time, term_label)
 from homework_export import (fetch_scores, homework_group, homework_time,
                              homework_title, safe_filename,
                              write_csv as write_homework_csv)
@@ -310,12 +311,224 @@ def _prefer_latest(current: dict | None, candidate: dict,
         return current
 
 
+def _period_code(name: str) -> str:
+    """官方班级编号：2026027MA+31 → 202602；没有编号返回空串。"""
+
+    code = official_term_code(name)
+    if not code:
+        return ''
+    return '20%s%s' % code
+
+
+def _class_identity(name: str, stamp: int = 0,
+                    term_hint: str = '',
+                    allow_unclassified: bool = False) -> dict | None:
+    """把班级名/作业班名拆成「班期 + 班名」。
+
+    班期优先用官方班级编号（202601 / 202602），其次用课堂名里的学期
+    （26暑 / 26秋），最后才按时间兜底。只有班名、没有班期的记录不会
+    再和同名班的其他学期混在一起。
+    """
+
+    base = class_base(name) or (name or '').strip()
+    if not base:
+        return None
+    short = feedback_class_label(base)
+    if short == '未命名课堂':
+        return None
+    if short == '未分类' and not allow_unclassified:
+        return None
+    term = term_label(base) or term_label(term_hint)
+    time_term = '' if term else term_from_time(stamp)
+    return {
+        'base': base,
+        'short': short,
+        'code': _period_code(base),
+        'term': term,
+        'time_term': time_term,
+    }
+
+
+def _record_identity(record: dict, class_names: list[str] | None,
+                     group_of: Callable[[dict], str] | None) -> dict | None:
+    base = record_group_base(record, class_names)
+    if not base and group_of is not None:
+        suggestion = str(group_of(record) or '').strip()
+        base = class_base(suggestion) if suggestion else ''
+    if not base:
+        base = class_group(record.get('shortDesc') or '')
+    return _class_identity(
+        base, record_time(record),
+        term_hint=str(record.get('shortDesc') or ''))
+
+
+def _vote_best(votes: dict[str, int]) -> str:
+    if not votes:
+        return ''
+    return sorted(votes.items(), key=lambda pair: (-pair[1], pair[0]))[0][0]
+
+
+def _vote_unique(votes: dict[str, int]) -> str:
+    """只有唯一最高票时才敢反推，平票宁可留空也不乱配班期。"""
+
+    if not votes:
+        return ''
+    ranked = sorted(votes.items(), key=lambda pair: (-pair[1], pair[0]))
+    if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
+        return ''
+    return ranked[0][0]
+
+
+def _period_votes(identities: list[dict]) -> tuple[dict[str, dict[str, int]],
+                                                   dict[tuple[str, str],
+                                                        dict[str, int]]]:
+    """从课堂名里的学期和作业时间学习「班期编号 ↔ 学期」的双向映射。"""
+
+    term_votes: dict[str, dict[str, int]] = {}
+    code_votes: dict[tuple[str, str], dict[str, int]] = {}
+    for identity in identities:
+        code = identity.get('code') or ''
+        term = identity.get('term') or identity.get('time_term') or ''
+        weight = 2 if identity.get('term') else 1
+        if not code or not term:
+            continue
+        seasons = term_votes.setdefault(code, {})
+        seasons[term] = seasons.get(term, 0) + weight
+        codes = code_votes.setdefault(
+            (identity.get('short') or '', term), {})
+        codes[code] = codes.get(code, 0) + weight
+    return term_votes, code_votes
+
+
+def _resolve_identity(identity: dict,
+                      term_votes: dict[str, dict[str, int]],
+                      code_votes: dict[tuple[str, str], dict[str, int]]
+                      ) -> dict:
+    code = identity.get('code') or ''
+    term = identity.get('term') or ''
+    if code and not term:
+        term = _vote_best(term_votes.get(code) or {})
+    if not term:
+        term = identity.get('time_term') or ''
+    if not code and term:
+        code = _vote_unique(
+            code_votes.get((identity.get('short') or '', term)) or {})
+    if code:
+        period = 'c:%s' % code
+    elif term:
+        period = 't:%s' % term
+    else:
+        period = 'b:%s' % (identity.get('base') or '')
+    return dict(identity, code=code, term=term, period=period)
+
+
+def _allowed_identities(class_names: list[str] | None,
+                        term_votes: dict[str, dict[str, int]],
+                        code_votes: dict[tuple[str, str], dict[str, int]]
+                        ) -> list[dict] | None:
+    if not class_names:
+        return None
+    allowed: list[dict] = []
+    for name in class_names:
+        identity = _class_identity(str(name or ''))
+        if identity is not None:
+            allowed.append(_resolve_identity(identity, term_votes,
+                                             code_votes))
+    return allowed
+
+
+def _accept_identity(identity: dict, allowed: list[dict] | None,
+                     allowed_keys: set[tuple[str, str]],
+                     allowed_terms: set[tuple[str, str]],
+                     periods_by_short: dict[str, set[str]]) -> bool:
+    if allowed is None:
+        return True
+    key = (identity.get('period') or '',
+           identity.get('short') or '')
+    if key in allowed_keys:
+        return True
+    term = identity.get('term') or ''
+    short = identity.get('short') or ''
+    if term and (short, term) in allowed_terms:
+        return True
+    if not identity.get('code'):
+        periods = periods_by_short.get(short) or set()
+        if len(periods) == 1:
+            known_terms = {
+                item.get('term') for item in allowed
+                if item.get('short') == short and item.get('term')}
+            if not known_terms or not term or term in known_terms:
+                return True
+    return False
+
+
+def _merge_bucket_identity(bucket: dict, identity: dict) -> None:
+    for key in ('code', 'term'):
+        if not bucket.get(key) and identity.get(key):
+            bucket[key] = identity[key]
+    if not bucket.get('base'):
+        bucket['base'] = identity.get('base') or ''
+
+
+def _new_bucket(identity: dict) -> dict:
+    return {
+        'short': identity.get('short') or '',
+        'base': identity.get('base') or '',
+        'code': identity.get('code') or '',
+        'term': identity.get('term') or '',
+        'period': identity.get('period') or '',
+        'history': {},
+        'preview': {},
+        'consolidation': {},
+    }
+
+
+def _bucket_labels(buckets: dict[tuple[str, str], dict]) -> dict:
+    """给每个班期生成显示名；同名班跨班期时带学期/编号前缀。"""
+
+    by_short: dict[str, list[tuple[str, str]]] = {}
+    for key, bucket in buckets.items():
+        by_short.setdefault(bucket.get('short') or '', []).append(key)
+
+    labels: dict[tuple[str, str], str] = {}
+    for short, keys in by_short.items():
+        if len(keys) == 1:
+            labels[keys[0]] = short
+            continue
+        candidates: dict[str, list[tuple[str, str]]] = {}
+        for key in keys:
+            bucket = buckets[key]
+            tag = str(bucket.get('term') or bucket.get('code') or '')
+            candidate = (tag + short) if tag else short
+            candidates.setdefault(candidate, []).append(key)
+        for candidate, group in candidates.items():
+            if len(group) == 1:
+                labels[group[0]] = candidate
+                continue
+            for key in group:
+                bucket = buckets[key]
+                code = str(bucket.get('code') or '')
+                labels[key] = (code + short) if code else (
+                    bucket.get('base') or short)
+
+    used: dict[str, tuple[str, str]] = {}
+    for key in sorted(labels):
+        label = labels[key]
+        if label in used:
+            bucket = buckets[key]
+            suffix = str(bucket.get('code') or bucket.get('period') or '')
+            label = '%s-%s' % (label, suffix) if suffix else label
+        used[label] = key
+        labels[key] = label
+    return labels
+
+
 def build_feedback_bundles(history_records: list[dict],
                            homework_items: list[dict],
                            group_of: Callable[[dict], str] | None = None,
                            class_names: list[str] | None = None
                            ) -> list[dict]:
-    """把课堂权限和作业按「班级 + 课次」组装成反馈包。
+    """把课堂权限和作业按「班期 + 班级 + 课次」组装成反馈包。
 
     每个反馈包固定包含三项：
     * 本节课课前预习作业；
@@ -325,55 +538,27 @@ def build_feedback_bundles(history_records: list[dict],
     第 N 节课有课后巩固作业时，也会生成第 N+1 节课反馈，让下一次课的
     预习/权限还没出来时明确标注「暂时缺失」，而不是假装不存在。
 
-    给了 ``class_names``（用户班级列表）时，只保留课堂班级代号能匹配到
-    这些班级的记录；匹配不到班级的课堂不会进入反馈列表。匹配仍沿用现有
-    班级归一化规则（学期、α/β 后缀、作业班后缀），不额外扩展。
+    班期优先按官方班级编号（202601 / 202602）区分，其次按课堂名里的
+    学期（26暑 / 26秋）区分。同名班的不同班期不会被合并，202601 的
+    第 12 节课权限不会串到秋季同名班的第 12 节课反馈里。
     """
 
-    buckets: dict[str, dict] = {}
-    allowed = ({feedback_class_label(name) for name in class_names or []
-                if str(name or '').strip()}
-               if class_names else None)
+    history_entries: list[tuple[dict, int, dict]] = []
+    homework_entries: list[tuple[dict, str, int, dict]] = []
+    identities: list[dict] = []
 
-    def record_label(record: dict) -> str:
-        values = [
-            (group_of(record) if group_of is not None else ''),
-            feedback_class_name(record),
-            class_group(record.get('shortDesc') or ''),
-        ]
-        for value in values:
-            label = feedback_class_label(value)
-            if not value or label == '未分类':
-                continue
-            if allowed is None or label in allowed:
-                return label
-        return ''
-
-    def bucket(label: str) -> dict:
-        return buckets.setdefault(label, {
-            'class': label,
-            'history': {},
-            'preview': {},
-            'consolidation': {},
-        })
-
-    history_labels: set[str] = set()
     for record in history_records or []:
         if not isinstance(record, dict):
             continue
         lesson = history_lesson(record)
         if not lesson:
             continue
-        label = record_label(record)
-        if not label:
+        identity = _record_identity(record, class_names, group_of)
+        if identity is None:
             continue
-        history_labels.add(label)
-        target = bucket(label)
-        target['history'][lesson] = _prefer_latest(
-            target['history'].get(lesson), record, record_time)
+        history_entries.append((record, lesson, identity))
+        identities.append(identity)
 
-    # 作业必须归到真实课堂所属的班；只有作业、没有课堂的“班”不生成反馈。
-    homework_allowed = history_labels or allowed
     for item in homework_items or []:
         if not isinstance(item, dict):
             continue
@@ -381,16 +566,85 @@ def build_feedback_bundles(history_records: list[dict],
         lesson = homework_lesson(item)
         if not kind or not lesson:
             continue
-        label = feedback_class_label(homework_group(item))
-        if homework_allowed is not None and label not in homework_allowed:
+        identity = _class_identity(
+            homework_group(item), homework_time(item),
+            allow_unclassified=True)
+        if identity is None:
             continue
-        target = bucket(label)
+        homework_entries.append((item, kind, lesson, identity))
+        identities.append(identity)
+
+    for name in class_names or []:
+        identity = _class_identity(str(name or ''))
+        if identity is not None:
+            identities.append(identity)
+
+    term_votes, code_votes = _period_votes(identities)
+
+    def resolve(identity: dict) -> dict:
+        return _resolve_identity(identity, term_votes, code_votes)
+
+    resolved_history = [
+        (record, lesson, resolve(identity))
+        for record, lesson, identity in history_entries]
+    resolved_homework = [
+        (item, kind, lesson, resolve(identity))
+        for item, kind, lesson, identity in homework_entries]
+    allowed = _allowed_identities(class_names, term_votes, code_votes)
+    allowed_keys = ({(item['period'], item['short']) for item in allowed}
+                    if allowed is not None else set())
+    allowed_terms = ({(item['short'], item['term']) for item in allowed
+                      if item.get('term')}
+                     if allowed is not None else set())
+    periods_by_short: dict[str, set[str]] = {}
+    for item in allowed or []:
+        periods_by_short.setdefault(item['short'], set()).add(
+            item['period'])
+
+    buckets: dict[tuple[str, str], dict] = {}
+    history_keys: set[tuple[str, str]] = set()
+
+    for record, lesson, identity in resolved_history:
+        if not _accept_identity(identity, allowed, allowed_keys,
+                                allowed_terms, periods_by_short):
+            continue
+        key = (identity['period'], identity['short'])
+        history_keys.add(key)
+        target = buckets.setdefault(key, _new_bucket(identity))
+        _merge_bucket_identity(target, identity)
+        target['history'][lesson] = _prefer_latest(
+            target['history'].get(lesson), record, record_time)
+
+    # 作业必须归到真实课堂所属的班；只有作业、没有课堂的“班”不生成反馈。
+    for item, kind, lesson, identity in resolved_homework:
+        key = (identity['period'], identity['short'])
+        if history_keys:
+            if key not in history_keys:
+                matches = [
+                    candidate for candidate in history_keys
+                    if candidate[1] == identity['short']
+                    and identity.get('term')
+                    and buckets[candidate].get('term') == identity['term']]
+                if not matches and not identity.get('code') \
+                        and not identity.get('term'):
+                    matches = [candidate for candidate in history_keys
+                               if candidate[1] == identity['short']]
+                if len(matches) != 1:
+                    continue
+                key = matches[0]
+        elif allowed is not None and not _accept_identity(
+                identity, allowed, allowed_keys, allowed_terms,
+                periods_by_short):
+            continue
+        target = buckets.setdefault(key, _new_bucket(identity))
+        _merge_bucket_identity(target, identity)
         target[kind][lesson] = _prefer_latest(
             target[kind].get(lesson), item, homework_time)
 
+    labels = _bucket_labels(buckets)
     bundles: list[dict] = []
-    for label in buckets:
-        target = buckets[label]
+    for key, target in buckets.items():
+        label = labels.get(key) or target.get('short') or '未分类'
         lessons = set(target['history']) | set(target['preview'])
         for lesson in target['consolidation']:
             if lesson >= 1:
@@ -806,7 +1060,8 @@ def write_feedback_csv(path: Path, rows: list[list[str]]) -> int:
     lines.extend(','.join(_csv_cell(cell) for cell in row) for row in rows)
     text = '\r\n'.join(lines) + '\r\n'
     try:
-        temp.write_text(text, encoding='utf-8-sig', newline='')
+        with temp.open('w', encoding='utf-8-sig', newline='') as handle:
+            handle.write(text)
         temp.replace(path)
     finally:
         if temp.exists():
@@ -849,10 +1104,10 @@ def _homework_class(item: dict) -> str:
 
 
 def _component_filename(kind: str, bundle: dict, item: dict) -> str:
-    if kind == PREVIEW:
-        return '课前预习-%s.csv' % safe_filename(homework_title(item))
-    if kind == CONSOLIDATION:
-        return '课后巩固-%s.csv' % safe_filename(homework_title(item))
+    if kind in (PREVIEW, CONSOLIDATION):
+        prefix = safe_filename(str(bundle.get('class') or '').strip())
+        title = safe_filename(homework_title(item))
+        return '%s-%s.csv' % (prefix, title) if prefix else '%s.csv' % title
     return '历史课堂权限-第%s节课统计报告.csv' % chinese_number(
         bundle['lesson'])
 
@@ -871,6 +1126,16 @@ def _missing_filename(kind: str) -> str:
         '本节课', '').replace('上一节课', '')
 
 
+def _legacy_component_filename(kind: str, item: dict) -> str:
+    """旧版本用「课前预习 / 课后巩固」作前缀，重导出时顺手清掉。"""
+
+    if kind == PREVIEW:
+        return '课前预习-%s.csv' % safe_filename(homework_title(item))
+    if kind == CONSOLIDATION:
+        return '课后巩固-%s.csv' % safe_filename(homework_title(item))
+    return ''
+
+
 def _clean_bundle_folder(folder: Path, bundle: dict) -> None:
     """重复导出同一课次时只清掉已知的生成文件，避免误删用户文件。"""
 
@@ -880,8 +1145,12 @@ def _clean_bundle_folder(folder: Path, bundle: dict) -> None:
     for kind in COMPONENT_ORDER:
         names.add(_missing_filename(kind))
         names.add('%s.txt' % _missing_filename(kind))
-        if (bundle.get('components') or {}).get(kind) is not None:
+        item = (bundle.get('components') or {}).get(kind)
+        if item is not None:
             names.add(feedback_component_name(bundle, kind))
+            legacy = _legacy_component_filename(kind, item)
+            if legacy:
+                names.add(legacy)
     for name in names:
         path = folder / name
         if path.is_file():
@@ -889,6 +1158,27 @@ def _clean_bundle_folder(folder: Path, bundle: dict) -> None:
                 path.unlink()
             except OSError:
                 pass
+
+
+def _feedback_class_dirs(out_root: Path,
+                         class_names: list[str] | set[str]) -> dict[str, Path]:
+    """同名班跨班期且用户直接选了班文件夹时，仍按班期分目录。"""
+
+    root = Path(out_root)
+    dirs = {name: class_output_dir(root, name) for name in class_names}
+    grouped: dict[str, list[str]] = {}
+    for name, path in dirs.items():
+        grouped.setdefault(str(path).casefold(), []).append(name)
+    for names in grouped.values():
+        if len(names) <= 1:
+            continue
+        exact = [name for name in names
+                 if sanitize(name).casefold() == root.name.casefold()]
+        keep = exact[0] if len(exact) == 1 else ''
+        for name in names:
+            if name != keep:
+                dirs[name] = root / sanitize(name)
+    return dirs
 
 
 def export_feedback_bundles(session: ApiSession,
@@ -925,6 +1215,9 @@ def export_feedback_bundles(session: ApiSession,
     groups: dict[str, list[str]] = {}
     files: list[dict] = []
     failed: list[dict] = []
+    class_dirs = _feedback_class_dirs(
+        out_root, {str(bundle.get('class') or '未分类')
+                   for bundle in ordered})
 
     for index, bundle in enumerate(ordered, 1):
         if cancel_event is not None and cancel_event.is_set():
@@ -936,7 +1229,8 @@ def export_feedback_bundles(session: ApiSession,
              kind='feedback', name=title, group=class_name,
              elapsed=(datetime.datetime.now() - started).total_seconds())
         try:
-            class_dir = class_output_dir(out_root, class_name)
+            class_dir = class_dirs.get(
+                class_name) or class_output_dir(out_root, class_name)
             folder = class_dir / sanitize(title)
             folder.mkdir(parents=True, exist_ok=True)
             _clean_bundle_folder(folder, bundle)
