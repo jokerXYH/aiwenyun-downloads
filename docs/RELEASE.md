@@ -158,6 +158,26 @@ xattr -dr com.apple.quarantine "/Applications/爱问云集成工具.app"
 
 ## 6. 本次发布记录
 
-发布完成后在这里追加：版本号、tag、Actions run id、站点部署 run id、
-三个平台产物的 SHA-256，以及线上验证结果。历史细节同步写入站点仓库的
-`docs/CHANGELOG.md` 和 `deploy/bt-panel/README.md`。
+### v2.3.1 · 2026-11-26
+
+- tag：`v2.3.1`（发布提交 `c0d69a1`）。
+- 构建/发布：`build-release.yml` run `45652516098` **success**；
+  preflight、Windows、macOS arm64、macOS x64、Publish release 全绿。
+- Release 资产：
+  - Windows `21,677,663B` / SHA-256
+    `60f85b296b8b16ebb1dafd24cd73c10a1ba5b6ee3a93a763def4e2e5a1fad9c3`
+  - macOS arm64 `17,966,062B` / SHA-256
+    `ffbe25f91968e1bce62722ba378c2f8fd640ab6e2fc212dd3d1f2ff116400553`
+  - macOS x64 `19,380,404B` / SHA-256
+    `2896555dd20ae48d1002bbe6ca52c9872b2f2458ee5c273cc4202503f20aa533`
+  - `macOS-DIAGNOSE.command` `2,423B`。
+- 服务器：`mirror-aiwenyun.yml` run `45655349738` success；镜像按
+  GitHub Release API digest 校验，三个文件 SHA-256 与 Release 一致。
+- 站点：`deploy.yml` run `45652966740`、`45654404955`、`45655305714`
+  success；页面 v2.3.1，`macOS-README.html` 站内 200。
+- 线上验收：下载 Windows exe 后 `--version-file` 返回 `2.3.1`；三个
+  `.sha256` 与 Release 资产一致。
+- 过程记录：2.3.0 的 tag 因 macOS runner 的 UTC 时区测试失败，已改为
+  UTC+8 断言；GitHub Release API 曾连续 500，发布 job 改为 `gh` 幂等
+  重试后成功。2.3.0 与误带未提交反馈改动的 2.3.1 预发布 tag 已删除，
+  当前唯一发布 tag 为 `v2.3.1`。
