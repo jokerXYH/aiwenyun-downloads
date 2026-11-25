@@ -31,8 +31,8 @@ THEME_LABELS = {
 }
 THEME_DESCRIPTIONS = {
     'light': '纸张暖白 · 森林绿',
-    'dark': '墨绿夜色 · 薄荷绿',
-    'dog': '奶油手绘 · 白狗与暖黄',
+    'dark': '石墨夜色 · 薄荷绿',
+    'dog': '奶油暖纸 · 暖黄',
 }
 
 # 语义色板。同一套键在三套主题里一一对应，切换时按角色换色。
@@ -42,42 +42,42 @@ THEMES = {
         'ACCENT_DARK': '#14513a',
         'ACCENT_SOFT': '#eaf2ed',
         'ON_ACCENT': '#f7fff9',
-        'TEXT_DARK': '#1b241f',
-        'TEXT_MUTED': '#5f6b63',
-        'TEXT_FAINT': '#6b776e',
-        'BG': '#f3f4f0',
+        'TEXT_DARK': '#1c1f1d',
+        'TEXT_MUTED': '#5a615c',
+        'TEXT_FAINT': '#737a75',
+        'BG': '#f5f4f0',
         'CARD': '#ffffff',
-        'SURFACE': '#f7f8f4',
-        'SURFACE_ALT': '#eef1eb',
-        'BORDER': '#e1e5de',
-        'BORDER_STRONG': '#cfd6ce',
-        'GROUP_BG': '#edf3ed',
-        'GROUP_MISC_BG': '#f2f3f0',
-        'CHECKED_BG': '#e1efe6',
+        'SURFACE': '#f8f7f3',
+        'SURFACE_ALT': '#efede7',
+        'BORDER': '#e3e1da',
+        'BORDER_STRONG': '#cfccc3',
+        'GROUP_BG': '#eef3ee',
+        'GROUP_MISC_BG': '#f2f1ec',
+        'CHECKED_BG': '#e2f0e7',
         'WARN': '#a9761f',
-        'DANGER': '#a8443a',
-        'DISABLED_BG': '#f4f5f2',
-        'DISABLED_FG': '#a8b0a9',
+        'DANGER': '#b34137',
+        'DISABLED_BG': '#f3f2ee',
+        'DISABLED_FG': '#a5a8a4',
         'ACCENT_DISABLED': '#b7cdc1',
         'ON_ACCENT_DISABLED': '#f5f8f5',
-        'HOVER_STRONG': '#e5eae2',
-        'TRACK': '#e8ece5',
-        'TRACK_SOFT': '#edf0e9',
-        'SCROLL': '#d7ddd5',
-        'TEXT_BODY': '#3d484f',
+        'HOVER_STRONG': '#e6e4dd',
+        'TRACK': '#e7e6e0',
+        'TRACK_SOFT': '#eeede8',
+        'SCROLL': '#d6d4cc',
+        'TEXT_BODY': '#3a3f3c',
         'LINK': '#17573f',
         'PROGRESS': '#1f6b4e',
         'ACCENT_TEXT': '#0f4632',
-        'CONTROL_BORDER': '#c4ccc4',
-        'HERO_FROM': '#f7f8f3',
-        'HERO_TO': '#e6efe7',
-        'HERO_TEXT': '#1b241f',
-        'HERO_MUTED': '#5f6b63',
-        'HERO_ART': '#2b8361',
-        'HERO_ART_SOFT': '#c7ded0',
-        'HERO_BTN_BG': '#fbfdf9',
-        'HERO_BTN_FG': '#1b241f',
-        'HERO_BTN_BORDER': '#cfd6ce',
+        'CONTROL_BORDER': '#c4c1b8',
+        'HERO_FROM': '#f5f4f0',
+        'HERO_TO': '#f5f4f0',
+        'HERO_TEXT': '#1c1f1d',
+        'HERO_MUTED': '#5a615c',
+        'HERO_ART': '#1f6b4e',
+        'HERO_ART_SOFT': '#d6e4dc',
+        'HERO_BTN_BG': '#ffffff',
+        'HERO_BTN_FG': '#1c1f1d',
+        'HERO_BTN_BORDER': '#cfccc3',
         'ICON_BG': '#1f6b4e',
         'ICON_FG': '#ffffff',
         'ICON_ACCENT': '#b9e3cd',
@@ -86,94 +86,94 @@ THEMES = {
     'dark': {
         'ACCENT': '#4ec08c',
         'ACCENT_DARK': '#38a875',
-        'ACCENT_SOFT': '#203a2e',
-        'ON_ACCENT': '#07140e',
-        'TEXT_DARK': '#e8f1eb',
-        'TEXT_MUTED': '#a7b8ad',
-        'TEXT_FAINT': '#7f9388',
-        'BG': '#101614',
-        'CARD': '#17201c',
-        'SURFACE': '#1b2621',
-        'SURFACE_ALT': '#223029',
-        'BORDER': '#27362e',
-        'BORDER_STRONG': '#354a3f',
-        'GROUP_BG': '#1e2f27',
-        'GROUP_MISC_BG': '#1a241f',
-        'CHECKED_BG': '#234133',
+        'ACCENT_SOFT': '#1c3128',
+        'ON_ACCENT': '#0c1712',
+        'TEXT_DARK': '#ededed',
+        'TEXT_MUTED': '#a1a1a6',
+        'TEXT_FAINT': '#85858b',
+        'BG': '#141415',
+        'CARD': '#1a1a1c',
+        'SURFACE': '#202022',
+        'SURFACE_ALT': '#28282b',
+        'BORDER': '#2b2b2f',
+        'BORDER_STRONG': '#3a3a40',
+        'GROUP_BG': '#1f2623',
+        'GROUP_MISC_BG': '#1c1c1e',
+        'CHECKED_BG': '#1e362c',
         'WARN': '#e0b25b',
-        'DANGER': '#e07b70',
-        'DISABLED_BG': '#202a25',
-        'DISABLED_FG': '#66776d',
-        'ACCENT_DISABLED': '#2f5d47',
+        'DANGER': '#e06c65',
+        'DISABLED_BG': '#1d1d20',
+        'DISABLED_FG': '#68686f',
+        'ACCENT_DISABLED': '#2c5442',
         'ON_ACCENT_DISABLED': '#9db3a7',
-        'HOVER_STRONG': '#2b3d33',
-        'TRACK': '#26342c',
-        'TRACK_SOFT': '#1f2b24',
-        'SCROLL': '#33453b',
-        'TEXT_BODY': '#c6d4cb',
+        'HOVER_STRONG': '#303034',
+        'TRACK': '#27272b',
+        'TRACK_SOFT': '#202023',
+        'SCROLL': '#3a3a40',
+        'TEXT_BODY': '#c8c8cc',
         'LINK': '#6fd6a4',
         'PROGRESS': '#4ec08c',
         'ACCENT_TEXT': '#79dfad',
-        'CONTROL_BORDER': '#40564a',
-        'HERO_FROM': '#101a16',
-        'HERO_TO': '#1c2e25',
-        'HERO_TEXT': '#f0f7f2',
-        'HERO_MUTED': '#a9b9ae',
-        'HERO_ART': '#5fd29b',
-        'HERO_ART_SOFT': '#2b4a3b',
-        'HERO_BTN_BG': '#223029',
-        'HERO_BTN_FG': '#e8f1eb',
-        'HERO_BTN_BORDER': '#3b5145',
-        'ICON_BG': '#0f1a15',
-        'ICON_FG': '#d8f5e5',
+        'CONTROL_BORDER': '#45454c',
+        'HERO_FROM': '#141415',
+        'HERO_TO': '#141415',
+        'HERO_TEXT': '#ededed',
+        'HERO_MUTED': '#a1a1a6',
+        'HERO_ART': '#4ec08c',
+        'HERO_ART_SOFT': '#273a31',
+        'HERO_BTN_BG': '#202022',
+        'HERO_BTN_FG': '#ededed',
+        'HERO_BTN_BORDER': '#3a3a40',
+        'ICON_BG': '#1c3128',
+        'ICON_FG': '#ededed',
         'ICON_ACCENT': '#4ec08c',
-        'ICON_SHADOW': '#000000',
+        'ICON_SHADOW': '#101012',
     },
     'dog': {
-        'ACCENT': '#f0b44a',
-        'ACCENT_DARK': '#d9942b',
-        'ACCENT_SOFT': '#fff1cf',
-        'ON_ACCENT': '#2b251c',
-        'TEXT_DARK': '#2b2b2b',
-        'TEXT_MUTED': '#6f675c',
-        'TEXT_FAINT': '#7b6f5e',
-        'BG': '#fdf6e9',
+        'ACCENT': '#e3a23a',
+        'ACCENT_DARK': '#c78520',
+        'ACCENT_SOFT': '#faecd0',
+        'ON_ACCENT': '#262119',
+        'TEXT_DARK': '#262119',
+        'TEXT_MUTED': '#665d51',
+        'TEXT_FAINT': '#7d7263',
+        'BG': '#f9f4ea',
         'CARD': '#fffdf8',
-        'SURFACE': '#fff9ee',
-        'SURFACE_ALT': '#f7ecd9',
-        'BORDER': '#e7d8c2',
-        'BORDER_STRONG': '#c9b08b',
-        'GROUP_BG': '#fff0d4',
-        'GROUP_MISC_BG': '#f7efdf',
-        'CHECKED_BG': '#ffedbe',
-        'WARN': '#b97716',
+        'SURFACE': '#f5eedf',
+        'SURFACE_ALT': '#ede3cf',
+        'BORDER': '#e4d8c3',
+        'BORDER_STRONG': '#cfc0a7',
+        'GROUP_BG': '#f8ecd5',
+        'GROUP_MISC_BG': '#f2eadb',
+        'CHECKED_BG': '#f9e8c3',
+        'WARN': '#b57416',
         'DANGER': '#b5523f',
-        'DISABLED_BG': '#f2eadb',
-        'DISABLED_FG': '#a89d8c',
-        'ACCENT_DISABLED': '#f0dcae',
-        'ON_ACCENT_DISABLED': '#8d8478',
-        'HOVER_STRONG': '#f1e2c9',
-        'TRACK': '#eadfca',
-        'TRACK_SOFT': '#f4ecdd',
-        'SCROLL': '#d9c8ad',
-        'TEXT_BODY': '#4a4338',
+        'DISABLED_BG': '#f0e8da',
+        'DISABLED_FG': '#a59a89',
+        'ACCENT_DISABLED': '#e8d4ad',
+        'ON_ACCENT_DISABLED': '#857c70',
+        'HOVER_STRONG': '#e7dac4',
+        'TRACK': '#e7dcc8',
+        'TRACK_SOFT': '#f0e7d6',
+        'SCROLL': '#d4c5ab',
+        'TEXT_BODY': '#443d33',
         'LINK': '#8f560a',
-        'PROGRESS': '#d9942b',
-        'ACCENT_TEXT': '#955a0c',
-        'CONTROL_BORDER': '#242424',
-        'HERO_FROM': '#fffaf0',
-        'HERO_TO': '#ffefd4',
-        'HERO_TEXT': '#2b2b2b',
-        'HERO_MUTED': '#7a6a54',
-        'HERO_ART': '#c68f2e',
-        'HERO_ART_SOFT': '#e8c98e',
-        'HERO_BTN_BG': '#fff8ea',
-        'HERO_BTN_FG': '#2b2b2b',
-        'HERO_BTN_BORDER': '#2b2b2b',
-        'ICON_BG': '#fffaf0',
-        'ICON_FG': '#2b2b2b',
-        'ICON_ACCENT': '#f0b44a',
-        'ICON_SHADOW': '#e8d7bd',
+        'PROGRESS': '#c78520',
+        'ACCENT_TEXT': '#8c530b',
+        'CONTROL_BORDER': '#b8a68e',
+        'HERO_FROM': '#f9f4ea',
+        'HERO_TO': '#f9f4ea',
+        'HERO_TEXT': '#262119',
+        'HERO_MUTED': '#665d51',
+        'HERO_ART': '#c78520',
+        'HERO_ART_SOFT': '#e8d0a3',
+        'HERO_BTN_BG': '#fffdf8',
+        'HERO_BTN_FG': '#262119',
+        'HERO_BTN_BORDER': '#cfc0a7',
+        'ICON_BG': '#f5eedf',
+        'ICON_FG': '#262119',
+        'ICON_ACCENT': '#e3a23a',
+        'ICON_SHADOW': '#cfc0a7',
     },
 }
 
@@ -369,7 +369,7 @@ def _draw_leaf(draw, cx, cy, length, angle, color, width):
 # ---------------------------------------------------------------------------
 
 def render_hero(key: str, width: int, height: int, supersample: int = 2):
-    """返回 PIL RGB 图；宽度不足时返回 None 由界面退回纯色。"""
+    """返回 PIL RGB 图；安静的纯色顶栏 + 1px 底部分隔线，无光晕或装饰贴纸。"""
 
     if Image is None or ImageDraw is None:
         return None
@@ -379,97 +379,11 @@ def render_hero(key: str, width: int, height: int, supersample: int = 2):
     height = max(64, int(height))
     scale = max(1, int(supersample))
     w, h = width * scale, height * scale
-    image = _vertical_gradient((w, h), palette['HERO_FROM'],
-                               palette['HERO_TO'])
-    art = Image.new('RGBA', (w, h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(art)
-    art_color = palette['HERO_ART']
-    soft = palette['HERO_ART_SOFT']
-
-    if key == 'light':
-        # 右侧一团柔和的日光 + 叶子线稿
-        glow = Image.new('RGBA', (w, h), (0, 0, 0, 0))
-        gd = ImageDraw.Draw(glow)
-        gd.ellipse((w * 0.68, -h * 0.55, w * 1.02, h * 0.95),
-                   fill=_rgba(art_color, 26))
-        glow = glow.filter(ImageFilter.GaussianBlur(18 * scale))
-        art = Image.alpha_composite(art, glow)
-        draw = ImageDraw.Draw(art)
-        for i, (cx, cy, length, angle, alpha) in enumerate((
-                (0.80, 0.62, 0.20, -0.55, 120),
-                (0.88, 0.30, 0.15, 0.55, 90),
-                (0.72, 0.22, 0.11, 1.10, 80))):
-            _draw_leaf(draw, w * cx, h * cy, w * length, angle,
-                       _rgba(art_color, alpha), max(2, 2 * scale))
-        for gx in range(int(w * 0.50), int(w * 0.94), 26 * scale):
-            for gy in range(int(h * 0.18), int(h * 0.86), 22 * scale):
-                draw.ellipse((gx, gy, gx + 2 * scale, gy + 2 * scale),
-                             fill=_rgba(art_color, 45))
-    elif key == 'dark':
-        # 月亮、星点与低对比的等高线
-        glow = Image.new('RGBA', (w, h), (0, 0, 0, 0))
-        gd = ImageDraw.Draw(glow)
-        gd.ellipse((w * 0.72, -h * 0.65, w * 1.02, h * 0.75),
-                   fill=_rgba(art_color, 30))
-        glow = glow.filter(ImageFilter.GaussianBlur(24 * scale))
-        art = Image.alpha_composite(art, glow)
-        draw = ImageDraw.Draw(art)
-        moon_x, moon_y, moon_r = w * 0.86, h * 0.35, h * 0.20
-        draw.ellipse((moon_x - moon_r, moon_y - moon_r,
-                      moon_x + moon_r, moon_y + moon_r),
-                     fill=_rgba('#e8f1eb', 210))
-        draw.ellipse((moon_x - moon_r - h * 0.06,
-                      moon_y - moon_r - h * 0.05,
-                      moon_x + moon_r * 0.45,
-                      moon_y + moon_r * 0.72),
-                     fill=(0, 0, 0, 0))
-        for i, (fx, fy, radius) in enumerate((
-                (0.66, 0.26, 1.6), (0.72, 0.62, 1.0),
-                (0.79, 0.48, 1.3), (0.93, 0.68, 1.8),
-                (0.58, 0.72, 1.0), (0.90, 0.18, 1.1))):
-            r = radius * scale
-            draw.ellipse((w * fx - r, h * fy - r,
-                          w * fx + r, h * fy + r),
-                         fill=_rgba('#d8f5e5', 190))
-        for offset, alpha in ((0.0, 70), (0.10, 45), (0.20, 28)):
-            draw.arc((w * 0.62, h * (0.12 + offset),
-                      w * 1.12, h * (0.92 + offset)),
-                     start=190, end=330,
-                     fill=_rgba(art_color, alpha), width=2 * scale)
-    else:
-        # 奶油纸、淡格线、爪印与星星
-        for gx in range(0, w, 30 * scale):
-            draw.line((gx, 0, gx, h), fill=_rgba(art_color, 16),
-                      width=1 * scale)
-        for gy in range(0, h, 30 * scale):
-            draw.line((0, gy, w, gy), fill=_rgba(art_color, 16),
-                      width=1 * scale)
-        for cx, cy, size, alpha in (
-                (0.34, 0.20, 0.06, 70), (0.48, 0.78, 0.045, 55),
-                (0.60, 0.16, 0.04, 45), (0.07, 0.74, 0.05, 45)):
-            _draw_paw(draw, w * cx, h * cy, w * size,
-                      _rgba(art_color, alpha))
-        for cx, cy, radius, alpha in (
-                (0.30, 0.62, 0.035, 90), (0.56, 0.36, 0.022, 90),
-                (0.64, 0.70, 0.030, 80)):
-            _draw_star(draw, w * cx, h * cy, w * radius,
-                       _rgba(art_color, alpha))
-        # 右上角的狗图案按反馈移除；这里只保留纸纹、爪印和星星。
-        # 一条手绘波浪线，压住横幅下沿
-        points = []
-        for index in range(0, 101):
-            px = w * (0.02 + 0.78 * index / 100.0)
-            py = h * 0.94 + math.sin(index * 0.42) * h * 0.018
-            points.append((px, py))
-        draw.line(points, fill=_rgba(art_color, 120),
-                  width=2 * scale, joint='curve')
-
-    # 顶部细高光 + 底部 2px 主题线
-    draw.line((0, 0, w, 0), fill=_rgba('#ffffff', 30),
-              width=1 * scale)
-    draw.line((0, h - 2 * scale, w, h - 2 * scale),
-              fill=_rgba(art_color, 120), width=2 * scale)
-    image = Image.alpha_composite(image.convert('RGBA'), art).convert('RGB')
+    image = Image.new('RGB', (w, h), _hex(palette['HERO_FROM']))
+    draw = ImageDraw.Draw(image)
+    # 仅保留一条 1px 安静分隔线，不再叠加渐变、光晕、高光或装饰贴纸
+    draw.line((0, h - scale, w, h - scale),
+              fill=_hex(palette['BORDER']), width=scale)
     if scale > 1:
         image = image.resize((width, height), Image.Resampling.LANCZOS)
     return image
@@ -519,8 +433,8 @@ def render_app_icon(key: str, size: int = 64):
     return image
 
 
-def render_settings_icon(key: str, size: int = 18, color: str | None = None):
-    """设置入口的小图标：浅/深色是齿轮，线条小狗是爪印。"""
+def render_settings_icon(key: str, size: int = 16, color: str | None = None):
+    """设置入口的小图标：三套主题统一使用简洁齿轮线图标。"""
 
     if Image is None or ImageDraw is None:
         return None
@@ -532,25 +446,21 @@ def render_settings_icon(key: str, size: int = 18, color: str | None = None):
     image = Image.new('RGBA', (s, s), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     ink = color or palette['HERO_BTN_FG']
-    if key == 'dog':
-        _draw_paw(draw, s * 0.5, s * 0.56, s * 0.74,
-                  None, ink, max(2, int(s * 0.075)))
-    else:
-        cx = cy = s * 0.5
-        outer = s * 0.33
-        inner = s * 0.20
-        width = max(2, int(s * 0.065))
-        draw.ellipse((cx - inner, cy - inner, cx + inner, cy + inner),
-                     outline=ink, width=width)
-        for index in range(8):
-            angle = index * math.pi / 4
-            x1 = cx + math.cos(angle) * (inner + s * 0.04)
-            y1 = cy + math.sin(angle) * (inner + s * 0.04)
-            x2 = cx + math.cos(angle) * outer
-            y2 = cy + math.sin(angle) * outer
-            draw.line((x1, y1, x2, y2), fill=ink, width=width)
-        dot = s * 0.035
-        draw.ellipse((cx - dot, cy - dot, cx + dot, cy + dot), fill=ink)
+    cx = cy = s * 0.5
+    outer = s * 0.34
+    inner = s * 0.20
+    width = max(2, int(s * 0.075))
+    draw.ellipse((cx - inner, cy - inner, cx + inner, cy + inner),
+                 outline=ink, width=width)
+    for index in range(8):
+        angle = index * math.pi / 4
+        x1 = cx + math.cos(angle) * (inner + s * 0.04)
+        y1 = cy + math.sin(angle) * (inner + s * 0.04)
+        x2 = cx + math.cos(angle) * outer
+        y2 = cy + math.sin(angle) * outer
+        draw.line((x1, y1, x2, y2), fill=ink, width=width)
+    dot = s * 0.035
+    draw.ellipse((cx - dot, cy - dot, cx + dot, cy + dot), fill=ink)
     return image.resize((size, size), Image.Resampling.LANCZOS)
 
 
@@ -558,7 +468,7 @@ def render_settings_icon(key: str, size: int = 18, color: str | None = None):
 # 设置里的主题预览卡片
 # ---------------------------------------------------------------------------
 
-def render_theme_preview(key: str, width: int = 144, height: int = 86):
+def render_theme_preview(key: str, width: int = 144, height: int = 88):
     if Image is None or ImageDraw is None:
         return None
     key = theme_key(key)
@@ -569,27 +479,11 @@ def render_theme_preview(key: str, width: int = 144, height: int = 86):
     image = Image.new('RGBA', (w, h), palette['BG'] + 'ff')
     draw = ImageDraw.Draw(image)
 
-    # 顶部横幅
-    hero_box = (0, 0, w, h * 0.34)
-    for y in range(int(hero_box[1]), int(hero_box[3])):
-        draw.line((0, y, w, y),
-                  fill=_mix(palette['HERO_FROM'], palette['HERO_TO'],
-                            y / max(1, hero_box[3])))
-    if key == 'dog':
-        _draw_paw(draw, w * 0.20, h * 0.25, w * 0.08,
-                  _rgba(palette['HERO_ART'], 80))
-    elif key == 'dark':
-        for fx, fy, r in ((0.62, 0.14, 1.2), (0.78, 0.22, 0.8),
-                          (0.88, 0.10, 1.4)):
-            draw.ellipse((w * fx - r * scale, h * fy - r * scale,
-                          w * fx + r * scale, h * fy + r * scale),
-                         fill=_rgba('#d8f5e5', 210))
-        draw.ellipse((w * 0.86 - h * 0.10, h * 0.12 - h * 0.10,
-                      w * 0.86 + h * 0.10, h * 0.12 + h * 0.10),
-                     fill='#f0f7f2')
-    else:
-        _draw_leaf(draw, w * 0.82, h * 0.22, w * 0.18, -0.4,
-                   _rgba(palette['HERO_ART'], 150), scale * 2)
+    # 顶部纯色顶栏 + 1px 底部分隔线
+    hero_h = int(h * 0.34)
+    draw.rectangle((0, 0, w, hero_h), fill=palette['HERO_FROM'])
+    draw.line((0, hero_h, w, hero_h), fill=palette['BORDER'],
+              width=max(1, scale))
 
     # 小图标 + 标题条
     _rounded(draw, (w * 0.05, h * 0.09, w * 0.14, h * 0.27),

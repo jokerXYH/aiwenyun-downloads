@@ -196,18 +196,18 @@ class ProgressPanel:
                              highlightbackground=BORDER,
                              highlightthickness=1)
         self.card.pack(fill=BOTH, expand=True)
-        self.stripe = tk.Frame(self.card, bg=ACCENT, height=self._px(3))
+        self.stripe = tk.Frame(self.card, bg=ACCENT, height=self._px(2))
         self.stripe.pack(fill=X)
         self.body = tk.Frame(self.card, bg=CARD)
         self.body.pack(fill=BOTH, expand=True,
-                       padx=self._px(20), pady=(self._px(13), self._px(16)))
+                       padx=self._px(20), pady=self._px(16))
 
         head = tk.Frame(self.body, bg=CARD)
         head.pack(fill=X)
-        self.icon_canvas = tk.Canvas(head, width=self._px(30),
-                                     height=self._px(30), bg=CARD,
+        self.icon_canvas = tk.Canvas(head, width=self._px(32),
+                                     height=self._px(32), bg=CARD,
                                      highlightthickness=0, bd=0)
-        self.icon_canvas.pack(side=LEFT, padx=(0, self._px(11)))
+        self.icon_canvas.pack(side=LEFT, padx=(0, self._px(12)))
         self.title_var = StringVar(value='')
         self.title_label = tk.Label(
             head, textvariable=self.title_var, bg=CARD, fg=TEXT_DARK,
@@ -216,17 +216,17 @@ class ProgressPanel:
         self.percent_var = StringVar(value='')
         self.percent_label = tk.Label(
             head, textvariable=self.percent_var, bg=CARD, fg=LINK,
-            anchor='e', font=(MONO, 18, 'bold'))
-        self.percent_label.pack(side=RIGHT, padx=(self._px(10), 0))
+            anchor='e', font=(MONO, 16, 'bold'))
+        self.percent_label.pack(side=RIGHT, padx=(self._px(12), 0))
 
         self.detail_var = StringVar(value='')
         self.detail_label = tk.Label(
             self.body, textvariable=self.detail_var, bg=CARD, fg=TEXT_MUTED,
             anchor='w', justify=LEFT, font=(FONT, 10),
-            wraplength=self._width - self._px(46))
-        self.detail_label.pack(fill=X, pady=(self._px(7), 0))
+            wraplength=self._width - self._px(48))
+        self.detail_label.pack(fill=X, pady=(self._px(8), 0))
 
-        self.bar_canvas = tk.Canvas(self.body, height=self._px(10), width=1,
+        self.bar_canvas = tk.Canvas(self.body, height=self._px(8), width=1,
                                     bg=CARD, highlightthickness=0, bd=0)
         self.bar_canvas.pack(fill=X, pady=(self._px(12), 0))
 
@@ -237,13 +237,13 @@ class ProgressPanel:
             self.sub_row, textvariable=self.sub_label_var, bg=CARD,
             fg=TEXT_FAINT, font=(MONO, 9), anchor='w')
         self.sub_label.pack(side=LEFT)
-        self.sub_canvas = tk.Canvas(self.sub_row, height=self._px(6), width=1,
+        self.sub_canvas = tk.Canvas(self.sub_row, height=self._px(4), width=1,
                                     bg=CARD, highlightthickness=0, bd=0)
         self.sub_canvas.pack(side=RIGHT, fill=X, expand=True,
                              padx=(self._px(12), 0))
 
         self.foot = tk.Frame(self.body, bg=CARD)
-        self.foot.pack(fill=X, pady=(self._px(11), 0))
+        self.foot.pack(fill=X, pady=(self._px(12), 0))
         self.elapsed_var = StringVar(value='')
         self.elapsed_label = tk.Label(
             self.foot, textvariable=self.elapsed_var, bg=CARD, fg=TEXT_FAINT,
@@ -256,7 +256,7 @@ class ProgressPanel:
         self.remain_label.pack(side=LEFT, padx=(self._px(12), 0))
         self.action_button = tk.Label(
             self.foot, text='取消', bg=CARD, fg=LINK,
-            font=(FONT, 10, 'bold'), padx=self._px(12),
+            font=(FONT, 10), padx=self._px(12),
             pady=self._px(4), cursor='hand2')
         self.action_button.pack(side=RIGHT)
         self._action_enabled = True
@@ -623,7 +623,7 @@ class ProgressPanel:
 
         if self.compact or self._sub_visible:
             return
-        self.sub_row.pack(fill=X, pady=(self._px(9), 0), before=self.foot)
+        self.sub_row.pack(fill=X, pady=(self._px(8), 0), before=self.foot)
         self._sub_visible = True
         self._resize_to_content()
         self._render_bars()
@@ -648,12 +648,12 @@ class ProgressPanel:
 
     def _render_bars(self) -> None:
         self._draw_bar(self.bar_canvas, self._shown_percent / 100.0,
-                       self._px(10), self._accent(),
+                       self._px(8), self._accent(),
                        indeterminate=(self._indeterminate
                                       and self._state == 'running'))
         if self._sub_visible:
             self._draw_bar(self.sub_canvas, self._sub_shown / 100.0,
-                           self._px(6), PROGRESS)
+                           self._px(4), PROGRESS)
 
     def _draw_bar(self, canvas, ratio: float, height: int, color: str,
                   indeterminate: bool = False) -> None:
@@ -705,7 +705,7 @@ class ProgressPanel:
         if not force and key == self._icon_key:
             return
         self._icon_key = key
-        size = self._px(30)
+        size = self._px(32)
         scale = 4
         pixels = max(16, size) * scale
         image = Image.new('RGBA', (pixels, pixels), (0, 0, 0, 0))
@@ -792,7 +792,7 @@ class LogPanel:
         self.text = Text(self.body, height=height, width=1, wrap='char',
                          relief='flat', bg=SURFACE, fg=TEXT_BODY,
                          highlightthickness=0, font=(MONO, 10),
-                         padx=self._px(12), pady=self._px(10),
+                         padx=self._px(12), pady=self._px(8),
                          spacing1=self._px(2), spacing3=self._px(2),
                          state='disabled', selectbackground=ACCENT_SOFT)
         self.scroll = ttk.Scrollbar(self.body, orient='vertical',
@@ -1197,27 +1197,27 @@ class App:
             logo_photo = ImageTk.PhotoImage(logo_image)
             logo = tk.Label(head, image=logo_photo, bg=BG, bd=0)
             logo.image = logo_photo
-            logo.pack(side=LEFT, padx=(0, self.px(14)))
+            logo.pack(side=LEFT, padx=(0, self.px(16)))
             self._settings_logo = logo
         title_box = tk.Frame(head, bg=BG)
         title_box.pack(side=LEFT, fill=X, expand=True)
         tk.Label(title_box, text='设置', bg=BG, fg=TEXT_DARK,
-                 font=(FONT, 18, 'bold'), anchor='w').pack(anchor='w')
+                 font=(FONT, 16, 'bold'), anchor='w').pack(anchor='w')
         tk.Label(title_box,
-                 text='更新程序，或给背景、图标和界面换一套主题',
+                 text='检查程序更新，或切换界面主题',
                  bg=BG, fg=TEXT_MUTED, font=(FONT, 10), anchor='w').pack(
-                     anchor='w', pady=(self.px(2), 0))
+                     anchor='w', pady=(self.px(4), 0))
         close_button = ttk.Button(head, text='关闭',
                                   style='SettingsQuiet.TButton',
                                   command=win.destroy)
         close_button.pack(side=RIGHT, anchor='n')
 
-        # ---- 一键更新 ----
+        # ---- 检查更新 ----
         update_card = tk.Frame(body, bg=CARD, bd=0, highlightthickness=1,
                                highlightbackground=BORDER)
-        update_card.pack(fill=X, pady=(self.px(18), 0))
+        update_card.pack(fill=X, pady=(self.px(16), 0))
         update_body = ttk.Frame(update_card, style='Card.TFrame',
-                                padding=(self.px(16), self.px(14)))
+                                padding=(self.px(16), self.px(16)))
         update_body.pack(fill=BOTH, expand=True)
         update_head = ttk.Frame(update_body, style='Card.TFrame')
         update_head.pack(fill=X)
@@ -1226,14 +1226,13 @@ class App:
         ttk.Label(update_head, text='当前 v%s' % APP_VERSION,
                   style='SettingsCardSub.TLabel').pack(side=RIGHT)
         ttk.Label(update_body,
-                  text='一键检查新版本；发现更新后可直接打开下载页。'
-                       '沿用原有更新检查逻辑。',
+                  text='检查是否有新版本，发现更新后可打开下载页',
                   style='SettingsBody.TLabel', wraplength=self.px(520),
-                  justify=LEFT).pack(anchor='w', pady=(self.px(3), 0))
+                  justify=LEFT).pack(anchor='w', pady=(self.px(4), 0))
         update_row = ttk.Frame(update_body, style='Card.TFrame')
-        update_row.pack(fill=X, pady=(self.px(10), 0))
+        update_row.pack(fill=X, pady=(self.px(12), 0))
         self.update_button = ttk.Button(
-            update_row, text='一键更新', style='Settings.TButton',
+            update_row, text='检查更新', style='Settings.TButton',
             command=self.on_check_update)
         self.update_button.pack(side=LEFT)
         self.settings_status_label = ttk.Label(
@@ -1247,9 +1246,9 @@ class App:
         # ---- 主题 ----
         theme_card = tk.Frame(body, bg=CARD, bd=0, highlightthickness=1,
                               highlightbackground=BORDER)
-        theme_card.pack(fill=X, pady=(self.px(14), 0))
+        theme_card.pack(fill=X, pady=(self.px(16), 0))
         theme_body = ttk.Frame(theme_card, style='Card.TFrame',
-                               padding=(self.px(16), self.px(14)))
+                               padding=(self.px(16), self.px(16)))
         theme_body.pack(fill=BOTH, expand=True)
         theme_head = ttk.Frame(theme_body, style='Card.TFrame')
         theme_head.pack(fill=X)
@@ -1261,11 +1260,10 @@ class App:
         ttk.Label(theme_head, textvariable=self.theme_hint_var,
                   style='SettingsCardSub.TLabel').pack(side=RIGHT)
         ttk.Label(theme_body,
-                  text='背景、窗口图标、按钮和列表会一起切换；'
-                       '选择后立即生效并记住。',
+                  text='背景、窗口图标、按钮和列表同步切换，选择后立即生效并记住',
                   style='SettingsBody.TLabel', justify=LEFT,
                   wraplength=self.px(520)).pack(anchor='w',
-                                                pady=(self.px(3), 0))
+                                                pady=(self.px(4), 0))
 
         theme_grid = tk.Frame(theme_body, bg=CARD)
         theme_grid.pack(fill=X, pady=(self.px(12), 0))
@@ -1279,7 +1277,7 @@ class App:
                             highlightbackground=BORDER, cursor='hand2')
             tile.grid(row=0, column=index, sticky='nsew',
                       padx=(0, self.px(8)) if index < 2 else 0)
-            preview = render_theme_preview(key, self.px(150), self.px(88))
+            preview = render_theme_preview(key, self.px(144), self.px(88))
             if preview is not None and ImageTk is not None:
                 photo = ImageTk.PhotoImage(preview)
                 self._theme_preview_photos[key] = photo
@@ -1291,7 +1289,7 @@ class App:
                 preview_label.pack(fill=X, padx=self.px(8),
                                    pady=(self.px(8), 0))
             title_row = tk.Frame(tile, bg=CARD, cursor='hand2')
-            title_row.pack(fill=X, padx=self.px(10), pady=(self.px(6), 0))
+            title_row.pack(fill=X, padx=self.px(8), pady=(self.px(8), 0))
             name = tk.Label(title_row, text=THEME_LABELS[key], bg=CARD,
                             fg=TEXT_DARK, font=(FONT, 11, 'bold'),
                             anchor='w', cursor='hand2')
@@ -1310,15 +1308,15 @@ class App:
                     sticker = tk.Label(
                         title_row, image=sticker_photo, bg=CARD, bd=0,
                         highlightthickness=1,
-                        highlightbackground=CONTROL_BORDER,
+                        highlightbackground=BORDER,
                         padx=self.px(4), pady=self.px(4), cursor='hand2')
-                    sticker.pack(side=RIGHT, padx=(self.px(6), 0))
+                    sticker.pack(side=RIGHT, padx=(self.px(8), 0))
             self._theme_stickers[key] = sticker
             desc = tk.Label(tile, text=THEME_DESCRIPTIONS[key], bg=CARD,
                             fg=TEXT_FAINT, font=(FONT, 9), anchor='w',
                             cursor='hand2')
-            desc.pack(fill=X, padx=self.px(10),
-                      pady=(0, self.px(8)))
+            desc.pack(fill=X, padx=self.px(8),
+                      pady=(self.px(2), self.px(8)))
             self._theme_tiles[key] = (tile, name, desc, preview_label)
             clickable = [tile, title_row, preview_label, name, desc]
             if sticker is not None:
@@ -1327,11 +1325,10 @@ class App:
                 widget.bind('<Button-1>',
                             lambda _e, k=key: self.apply_theme(k))
         tk.Label(body,
-                 text='浅色 / 深色使用同一套版式；线条小狗使用手绘黑线、'
-                      '奶油纸底与小狗图标。',
+                 text='浅色与深色共用同一套版式；线条小狗采用奶油暖纸底色',
                  bg=BG, fg=TEXT_FAINT, font=(FONT, 9), anchor='w',
                  justify=LEFT, wraplength=self.px(560)).pack(
-                     fill=X, pady=(self.px(14), 0))
+                     fill=X, pady=(self.px(12), 0))
 
         win.bind('<Escape>', lambda _e: win.destroy())
         win.protocol('WM_DELETE_WINDOW', lambda: self._close_settings(win))
@@ -1397,7 +1394,7 @@ class App:
         except Exception:  # noqa: BLE001
             pass
         if self.settings_update_status.get() and not self._update_busy:
-            self._set_update_controls('一键更新', 'normal')
+            self._set_update_controls('检查更新', 'normal')
 
     def _set_update_controls(self, text: str, state: str) -> None:
         button = getattr(self, 'update_button', None)
@@ -1645,11 +1642,11 @@ class App:
             holder, text=label, command=lambda: self._switch_view(key),
             bg=BG, fg=TEXT_MUTED, activebackground=BG,
             activeforeground=TEXT_DARK, font=(FONT, 12), bd=0,
-            relief='flat', highlightthickness=0, padx=0, pady=self.px(6),
+            relief='flat', highlightthickness=0, padx=0, pady=self.px(8),
             cursor='hand2')
         button.pack(anchor='w')
         underline = tk.Frame(holder, bg=BG, height=self.px(2))
-        underline.pack(fill=X, pady=(self.px(6), 0))
+        underline.pack(fill=X, pady=(self.px(4), 0))
         return holder, button, underline
 
     def _configure_styles(self) -> None:
@@ -1713,7 +1710,7 @@ class App:
                   foreground=[('disabled', DISABLED_FG)],
                   bordercolor=[('active', BORDER_STRONG), ('disabled', BORDER)])
         style.configure('HeaderUpdate.TButton', font=(FONT, 9),
-                        padding=(self.px(10), self.px(5)), background=CARD,
+                        padding=(self.px(12), self.px(4)), background=CARD,
                         foreground=TEXT_DARK, borderwidth=1, relief='solid',
                         bordercolor=BORDER_STRONG, lightcolor=BORDER_STRONG,
                         darkcolor=BORDER_STRONG, focusthickness=2, focuscolor=ACCENT_TEXT)
@@ -1745,7 +1742,7 @@ class App:
                   foreground=[('disabled', DISABLED_FG)])
         # 设置窗口里的主题卡片和普通按钮
         style.configure('Settings.TButton', font=(FONT, 10, 'bold'),
-                        padding=(self.px(16), self.px(10)), background=ACCENT,
+                        padding=(self.px(16), self.px(8)), background=ACCENT,
                         foreground=ON_ACCENT, borderwidth=0, relief='flat',
                         focusthickness=2, focuscolor=ACCENT_TEXT)
         style.map('Settings.TButton',
@@ -1781,7 +1778,7 @@ class App:
                   lightcolor=[('focus', ACCENT)],
                   darkcolor=[('focus', ACCENT)])
         style.configure('TCombobox', padding=(self.px(8), self.px(6)),
-                        arrowsize=self.px(15), fieldbackground=CARD,
+                        arrowsize=self.px(16), fieldbackground=CARD,
                         foreground=TEXT_DARK, bordercolor=BORDER_STRONG,
                         lightcolor=BORDER_STRONG, darkcolor=BORDER_STRONG,
                         arrowcolor=TEXT_MUTED)
@@ -1790,7 +1787,7 @@ class App:
                   foreground=[('readonly', TEXT_DARK)],
                   bordercolor=[('focus', ACCENT)])
         style.configure('TSpinbox', padding=(self.px(8), self.px(6)),
-                        arrowsize=self.px(14), fieldbackground=CARD,
+                        arrowsize=self.px(16), fieldbackground=CARD,
                         foreground=TEXT_DARK, bordercolor=BORDER_STRONG,
                         lightcolor=BORDER_STRONG, darkcolor=BORDER_STRONG,
                         arrowcolor=TEXT_MUTED)
@@ -1804,7 +1801,7 @@ class App:
                         background=ACCENT, borderwidth=0, lightcolor=ACCENT,
                         darkcolor=ACCENT)
         style.configure('Vertical.TScrollbar', arrowsize=self.px(12),
-                        width=self.px(10), background=SCROLL,
+                        width=self.px(8), background=SCROLL,
                         troughcolor=CARD, bordercolor=CARD, lightcolor=CARD,
                         darkcolor=CARD)
         style.configure('Board.Treeview', rowheight=self.px(40),
@@ -1842,15 +1839,15 @@ class App:
             self.hero, text='设置', command=self.open_settings,
             takefocus=1, bg=HERO_BTN_BG, fg=HERO_BTN_FG,
             activebackground=ACCENT_SOFT, activeforeground=HERO_BTN_FG,
-            font=(FONT, 10, 'bold'), bd=0, relief='flat',
-            padx=self.px(10), pady=self.px(4), cursor='hand2',
+            font=(FONT, 10), bd=0, relief='flat',
+            padx=self.px(12), pady=self.px(4), cursor='hand2',
             highlightthickness=1, highlightbackground=HERO_BTN_BORDER,
             highlightcolor=ACCENT_TEXT)
         self.settings_pill = self.settings_button
         self.settings_button.bind('<Return>',
                                   lambda _e: self.open_settings())
         self.settings_pill.place(relx=1.0, x=-self.px(24),
-                                 y=self.px(8), anchor='ne')
+                                 rely=0.5, anchor='e')
         self._refresh_hero_chrome()
         self.root.after(60, lambda: self._render_hero(force=True))
 
@@ -1891,7 +1888,7 @@ class App:
         self.hero.create_image(0, 0, anchor='nw', image=photo, tags='hero')
 
         pad = self.px(24)
-        logo_size = self.px(34)
+        logo_size = self.px(32)
         logo_image = render_app_icon(self.theme_key, logo_size)
         if logo_image is not None:
             logo_photo = ImageTk.PhotoImage(logo_image)
@@ -1899,23 +1896,14 @@ class App:
             self.hero.create_image(pad, height / 2, anchor='w',
                                    image=logo_photo, tags='hero')
         text_x = pad + logo_size + self.px(12)
-        show_subtitle = height >= self.px(88)
-        if show_subtitle:
-            self.hero.create_text(
-                text_x, height / 2 - self.px(10), text=APP_NAME, anchor='w',
-                fill=HERO_TEXT, font=(FONT, 16, 'bold'), tags='hero')
-            self.hero.create_text(
-                text_x, height / 2 + self.px(13),
-                text='只读读取本机登录态 · 邀请码 Excel · 板书 PDF · 反馈统计',
-                anchor='w', fill=HERO_MUTED, font=(FONT, 9), tags='hero')
-        else:
-            self.hero.create_text(
-                text_x, height / 2, text=APP_NAME, anchor='w',
-                fill=HERO_TEXT, font=(FONT, 15, 'bold'), tags='hero')
         self.hero.create_text(
-            width - self.px(24), height - self.px(7),
-            text='v%s' % APP_VERSION, anchor='se', fill=HERO_MUTED,
-            font=(MONO, 8), tags='hero')
+            text_x, height / 2 - self.px(12), text=APP_NAME, anchor='w',
+            fill=HERO_TEXT, font=(FONT, 15, 'bold'), tags='hero')
+        self.hero.create_text(
+            text_x, height / 2 + self.px(12),
+            text='只读本机登录态 · 邀请码 Excel · 板书 PDF · 反馈统计 · v%s'
+                 % APP_VERSION,
+            anchor='w', fill=HERO_MUTED, font=(FONT, 9), tags='hero')
         self.hero.tag_lower('hero')
 
     def _refresh_hero_chrome(self) -> None:
@@ -1927,7 +1915,7 @@ class App:
             highlightbackground=HERO_BTN_BORDER,
             highlightcolor=ACCENT_TEXT)
         if Image is not None and ImageTk is not None:
-            icon = render_settings_icon(self.theme_key, self.px(17),
+            icon = render_settings_icon(self.theme_key, self.px(16),
                                         HERO_BTN_FG)
             if icon is not None:
                 try:
@@ -1991,8 +1979,8 @@ class App:
         self._configure_styles()
 
         self._build_hero()
-        outer = ttk.Frame(self.root, padding=(self.px(24), self.px(6),
-                                              self.px(24), self.px(10)))
+        outer = ttk.Frame(self.root, padding=(self.px(24), self.px(8),
+                                              self.px(24), self.px(12)))
         outer.pack(fill=BOTH, expand=True)
 
         # ---------- 功能切换 ----------
@@ -2047,16 +2035,18 @@ class App:
             style='Faint.TLabel')
 
         invite_opts = ttk.Frame(invite_left, style='Card.TFrame')
-        invite_opts.pack(fill=X, pady=(16, 0))
+        invite_opts.pack(fill=X, pady=(self.px(16), 0))
         ttk.Label(invite_opts, text='从', style='Muted.TLabel').pack(side=LEFT)
         ttk.Spinbox(invite_opts, from_=0, to=365, width=4,
-                    textvariable=self.past_days).pack(side=LEFT, padx=(6, 6))
+                    textvariable=self.past_days).pack(
+                        side=LEFT, padx=(self.px(8), self.px(8)))
         ttk.Label(invite_opts, text='天前开始',
                   style='Muted.TLabel').pack(side=LEFT)
         ttk.Label(invite_opts, text='并发',
-                  style='Muted.TLabel').pack(side=LEFT, padx=(22, 0))
+                  style='Muted.TLabel').pack(side=LEFT, padx=(self.px(24), 0))
         ttk.Spinbox(invite_opts, from_=1, to=16, width=4,
-                    textvariable=self.workers).pack(side=LEFT, padx=(6, 6))
+                    textvariable=self.workers).pack(
+                        side=LEFT, padx=(self.px(8), self.px(8)))
         ttk.Label(invite_opts, text='个请求',
                   style='Muted.TLabel').pack(side=LEFT)
 
@@ -2096,8 +2086,8 @@ class App:
                 '文件保存到桌面「爱问云邀请码」'), 1):
             row = tk.Frame(tips, bg=SURFACE)
             row.pack(fill=X, pady=self.px(4))
-            tk.Label(row, text='%02d' % number, bg=SURFACE, fg=ACCENT_DARK,
-                     font=(MONO, 9, 'bold'), width=3, anchor='nw').pack(
+            tk.Label(row, text='%d.' % number, bg=SURFACE, fg=TEXT_FAINT,
+                     font=(MONO, 9), width=3, anchor='nw').pack(
                          side=LEFT, anchor='n')
             tk.Label(row, text=line, bg=SURFACE, fg=TEXT_MUTED,
                      font=(FONT, 10), justify=LEFT, anchor='w',
@@ -2105,8 +2095,8 @@ class App:
                          side=LEFT, fill=X, expand=True)
         tk.Frame(tips, bg=BORDER, height=1).pack(
             fill=X, pady=(self.px(12), self.px(8)))
-        tk.Label(tips, text='只读：不读取 cookie / 聊天记录 / 通讯录；'
-                            'token 不写入文件。', bg=SURFACE, fg=TEXT_FAINT,
+        tk.Label(tips, text='只读：不读取 cookie / 聊天记录 / 通讯录，'
+                            'token 不写入文件', bg=SURFACE, fg=TEXT_FAINT,
                  font=(FONT, 9), justify=LEFT, anchor='w',
                  wraplength=self.px(392)).pack(anchor='w')
 
@@ -2117,7 +2107,7 @@ class App:
                                    pady=(self.px(16), 0))
 
         # ---------- 板书视图 ----------
-        board_outer, board = self._card(content, padding=self.px(14))
+        board_outer, board = self._card(content, padding=self.px(16))
         board_outer.grid(row=0, column=0, sticky='nsew')
         board_outer.grid_remove()
         self.board_view = board_outer
@@ -2130,7 +2120,7 @@ class App:
                   text='按学期+班级分组 · 只导出所选 · PDF 按学期+班级分文件夹',
                   style='Muted.TLabel').pack(side=LEFT, anchor='s',
                                              padx=(self.px(12), 0),
-                                             pady=(0, self.px(3)))
+                                             pady=(0, self.px(4)))
 
         # 登录态和登录操作挪到页头右侧：以前它们和查询条件挤在工具栏同
         # 一行里，状态字被按钮、说明文字切成碎片，字号又小，看不清。
@@ -2146,16 +2136,16 @@ class App:
         self.rescan_button.pack(side=LEFT)
         self.use_account_link = tk.Label(
             self.login_row, text='改用账号密码登录', bg=CARD, fg=LINK,
-            activeforeground=ACCENT_DARK, font=(FONT, 9, 'underline'),
+            activeforeground=ACCENT_DARK, font=(FONT, 10),
             cursor='hand2')
         self.use_account_link.bind(
             '<Button-1>', lambda _e: self._enable_account_login())
 
         toolbar = tk.Frame(board, bg=SURFACE, bd=0,
                            highlightbackground=BORDER, highlightthickness=1)
-        toolbar.grid(row=1, column=0, sticky='ew', pady=(self.px(14), 0))
+        toolbar.grid(row=1, column=0, sticky='ew', pady=(self.px(16), 0))
         toolbar_body = ttk.Frame(toolbar, style='Surface.TFrame',
-                                 padding=(self.px(16), self.px(10)))
+                                 padding=(self.px(16), self.px(12)))
         toolbar_body.pack(fill=X)
 
         # 查询条件只占一行：时间段 / 排序 ｜ 自定义日期，组与组之间用竖线
@@ -2167,7 +2157,7 @@ class App:
         self.range_box = ttk.Combobox(range_row, textvariable=self.board_range,
                                       values=list(RANGE_PRESETS),
                                       state='readonly', width=12)
-        self.range_box.pack(side=LEFT, padx=(self.px(8), self.px(18)))
+        self.range_box.pack(side=LEFT, padx=(self.px(8), self.px(16)))
         self.range_box.bind('<<ComboboxSelected>>',
                             lambda _e: self._auto_list_boards())
         ttk.Label(range_row, text='排序',
@@ -2175,19 +2165,19 @@ class App:
         self.sort_box = ttk.Combobox(range_row, textvariable=self.board_sort,
                                      values=['按上课顺序', '按板书类型'],
                                      state='readonly', width=11)
-        self.sort_box.pack(side=LEFT, padx=(self.px(8), self.px(18)))
+        self.sort_box.pack(side=LEFT, padx=(self.px(8), self.px(16)))
         tk.Frame(range_row, bg=BORDER_STRONG, width=1).pack(
-            side=LEFT, fill=Y, pady=self.px(4), padx=(0, self.px(18)))
+            side=LEFT, fill=Y, pady=self.px(4), padx=(0, self.px(16)))
         ttk.Label(range_row, text='自定义日期',
                   style='SurfaceMuted.TLabel').pack(side=LEFT)
         self.from_entry = ttk.Entry(range_row, textvariable=self.board_from,
                                     width=11)
-        self.from_entry.pack(side=LEFT, padx=(self.px(8), self.px(6)))
+        self.from_entry.pack(side=LEFT, padx=(self.px(8), self.px(8)))
         ttk.Label(range_row, text='至',
                   style='SurfaceMuted.TLabel').pack(side=LEFT)
         self.to_entry = ttk.Entry(range_row, textvariable=self.board_to,
                                   width=11)
-        self.to_entry.pack(side=LEFT, padx=(self.px(6), 0))
+        self.to_entry.pack(side=LEFT, padx=(self.px(8), 0))
         self.from_entry.bind('<Return>', lambda _e: self._auto_list_boards())
         self.to_entry.bind('<Return>', lambda _e: self._auto_list_boards())
         self.board_list_button = ttk.Button(range_row, text='列出板书',
@@ -2202,7 +2192,7 @@ class App:
             toolbar_body, textvariable=self.client_hint,
             style='SurfaceHint.TLabel', justify=LEFT,
             wraplength=self.px(520))
-        self.hint_label.pack(fill=X, pady=(self.px(6), 0))
+        self.hint_label.pack(fill=X, pady=(self.px(8), 0))
 
         def _fit_hint(event) -> None:
             width = max(self.px(240), int(event.width) - self.px(36))
@@ -2218,13 +2208,13 @@ class App:
                   style='SurfaceMuted.TLabel').pack(side=LEFT)
         self.name_entry = ttk.Entry(self.account_row,
                                     textvariable=self.login_name, width=15)
-        self.name_entry.pack(side=LEFT, padx=(self.px(8), self.px(14)))
+        self.name_entry.pack(side=LEFT, padx=(self.px(8), self.px(16)))
         ttk.Label(self.account_row, text='密码',
                   style='SurfaceMuted.TLabel').pack(side=LEFT)
         self.pass_entry = ttk.Entry(self.account_row,
                                     textvariable=self.login_pass,
                                     width=15, show='*')
-        self.pass_entry.pack(side=LEFT, padx=(self.px(8), self.px(14)))
+        self.pass_entry.pack(side=LEFT, padx=(self.px(8), self.px(16)))
         self.login_button = ttk.Button(self.account_row, text='登录',
                                        style='Secondary.TButton',
                                        command=self.on_login)
@@ -2239,27 +2229,27 @@ class App:
 
         list_head = ttk.Frame(board, style='Card.TFrame')
         list_head.grid(row=3, column=0, sticky='ew',
-                       pady=(self.px(12), self.px(6)))
+                       pady=(self.px(12), self.px(8)))
         ttk.Label(list_head, text='课堂',
                   style='SectionSmall.TLabel').pack(side=LEFT)
         ttk.Label(list_head, textvariable=self.board_meta,
-                  style='Faint.TLabel').pack(side=LEFT, padx=(12, 0))
+                  style='Faint.TLabel').pack(side=LEFT, padx=(self.px(12), 0))
         self.clear_button = ttk.Button(list_head, text='清空',
                                        style='Quiet.TButton',
                                        command=self.on_clear_boards,
                                        state='disabled')
-        self.clear_button.pack(side=RIGHT, padx=(8, 0))
+        self.clear_button.pack(side=RIGHT, padx=(self.px(8), 0))
         self.select_all_button = ttk.Button(list_head, text='全选',
                                             style='Quiet.TButton',
                                             command=self.on_select_all_boards,
                                             state='disabled')
-        self.select_all_button.pack(side=RIGHT, padx=(8, 0))
+        self.select_all_button.pack(side=RIGHT, padx=(self.px(8), 0))
 
         # 班级做成横排按钮：按钮上带学期（26秋7MAA12），窗口放不下时
         # 多余的收进「更多」菜单，不再固定只显示 8 个。
         self.board_class_bar = ttk.Frame(board, style='Card.TFrame')
         self.board_class_bar.grid(row=4, column=0, sticky='ew',
-                                  pady=(0, self.px(6)))
+                                  pady=(0, self.px(8)))
         self.board_class_bar.bind('<Configure>',
                                   self._on_board_class_bar_resize)
         self.board_class_buttons: dict[str, tk.Button] = {}
@@ -2307,18 +2297,18 @@ class App:
             text='还没有课堂 · 选好时间段后点「列出板书」',
             bg=CARD, fg=TEXT_FAINT, font=(FONT, 10),
             wraplength=self.px(360), justify='center')
-        self.board_empty_text.pack(pady=(self.px(6), 0))
+        self.board_empty_text.pack(pady=(self.px(8), 0))
         self.board_empty.place(relx=0.5, rely=0.55, anchor='center')
         self.board_empty.lift()
 
         board_row = ttk.Frame(board, style='Card.TFrame')
-        board_row.grid(row=6, column=0, sticky='ew', pady=(self.px(10), 0))
+        board_row.grid(row=6, column=0, sticky='ew', pady=(self.px(12), 0))
         self.selection_badge = tk.Label(
             board_row, text='已选 0 节', bg=CARD, fg=TEXT_MUTED,
             font=(FONT, 10))
         self.selection_badge.pack(side=LEFT)
         ttk.Label(board_row, text='点整行勾选 · 换班级不影响已勾选',
-                  style='Faint.TLabel').pack(side=LEFT, padx=(12, 0))
+                  style='Faint.TLabel').pack(side=LEFT, padx=(self.px(12), 0))
         self.board_all_button = ttk.Button(
             board_row, text='导出所选板书', style='Primary.TButton',
             command=self.on_export_boards, state='disabled')
@@ -2330,12 +2320,12 @@ class App:
             collapsible=True, expanded=False, px=self.px,
             on_toggle=self.on_toggle_board_log)
         self.board_log.frame.grid(row=7, column=0, sticky='ew',
-                                  pady=(self.px(10), 0))
+                                  pady=(self.px(12), 0))
         # 窗口被拖矮时把日志收起来，给列表腾高度
         board.bind('<Configure>', self._fit_board_layout)
 
         # ---------- 反馈文件导出视图 ----------
-        feedback_outer, feedback = self._card(content, padding=self.px(14))
+        feedback_outer, feedback = self._card(content, padding=self.px(16))
         feedback_outer.grid(row=0, column=0, sticky='nsew')
         feedback_outer.grid_remove()
         self.feedback_view = feedback_outer
@@ -2349,7 +2339,7 @@ class App:
                   text='展开课次选文件 · 按班级和课次归档',
                   style='Muted.TLabel').pack(side=LEFT, anchor='s',
                                              padx=(self.px(12), 0),
-                                             pady=(0, self.px(3)))
+                                             pady=(0, self.px(4)))
         self.feedback_badge = tk.Label(
             feedback_head, text='○ 等待登录态', bg=CARD, fg=TEXT_MUTED,
             font=(FONT, 10))
@@ -2359,9 +2349,9 @@ class App:
                                     highlightbackground=BORDER,
                                     highlightthickness=1)
         feedback_toolbar.grid(row=1, column=0, sticky='ew',
-                              pady=(self.px(14), 0))
+                              pady=(self.px(16), 0))
         feedback_body = ttk.Frame(feedback_toolbar, style='Surface.TFrame',
-                                  padding=(self.px(16), self.px(10)))
+                                  padding=(self.px(16), self.px(12)))
         feedback_body.pack(fill=X)
 
         feedback_range_row = ttk.Frame(feedback_body, style='Surface.TFrame')
@@ -2372,21 +2362,21 @@ class App:
             feedback_range_row, textvariable=self.feedback_range,
             values=list(RANGE_PRESETS), state='readonly', width=12)
         self.feedback_range_box.pack(side=LEFT,
-                                     padx=(self.px(8), self.px(18)))
+                                     padx=(self.px(8), self.px(16)))
         self.feedback_range_box.bind(
             '<<ComboboxSelected>>', lambda _e: self._auto_list_feedbacks())
         tk.Frame(feedback_range_row, bg=BORDER_STRONG, width=1).pack(
-            side=LEFT, fill=Y, pady=self.px(4), padx=(0, self.px(18)))
+            side=LEFT, fill=Y, pady=self.px(4), padx=(0, self.px(16)))
         ttk.Label(feedback_range_row, text='自定义日期',
                   style='SurfaceMuted.TLabel').pack(side=LEFT)
         self.feedback_from_entry = ttk.Entry(
             feedback_range_row, textvariable=self.feedback_from, width=11)
-        self.feedback_from_entry.pack(side=LEFT, padx=(self.px(8), self.px(6)))
+        self.feedback_from_entry.pack(side=LEFT, padx=(self.px(8), self.px(8)))
         ttk.Label(feedback_range_row, text='至',
                   style='SurfaceMuted.TLabel').pack(side=LEFT)
         self.feedback_to_entry = ttk.Entry(
             feedback_range_row, textvariable=self.feedback_to, width=11)
-        self.feedback_to_entry.pack(side=LEFT, padx=(self.px(6), 0))
+        self.feedback_to_entry.pack(side=LEFT, padx=(self.px(8), 0))
         self.feedback_from_entry.bind(
             '<Return>', lambda _e: self._auto_list_feedbacks())
         self.feedback_to_entry.bind(
@@ -2419,7 +2409,7 @@ class App:
             feedback_body, textvariable=self.client_hint,
             style='SurfaceHint.TLabel', justify=LEFT,
             wraplength=self.px(520))
-        self.feedback_hint.pack(fill=X, pady=(self.px(6), 0))
+        self.feedback_hint.pack(fill=X, pady=(self.px(8), 0))
 
         # 进度用独立弹窗，不占列表高度
         self.feedback_progress = ProgressPanel(feedback, self.on_cancel,
@@ -2427,17 +2417,17 @@ class App:
 
         feedback_list_head = ttk.Frame(feedback, style='Card.TFrame')
         feedback_list_head.grid(row=2, column=0, sticky='ew',
-                                pady=(self.px(12), self.px(6)))
+                                pady=(self.px(12), self.px(8)))
         ttk.Label(feedback_list_head, text='反馈文件',
                   style='SectionSmall.TLabel').pack(side=LEFT)
         ttk.Label(feedback_list_head, textvariable=self.feedback_meta,
                   style='Faint.TLabel').pack(side=LEFT, padx=(self.px(12), 0))
         self.feedback_clear_button = ttk.Button(
-            feedback_list_head, text='清空', style='Secondary.TButton',
+            feedback_list_head, text='清空', style='Quiet.TButton',
             command=self.on_clear_feedbacks, state='disabled')
         self.feedback_clear_button.pack(side=RIGHT, padx=(self.px(8), 0))
         self.feedback_select_button = ttk.Button(
-            feedback_list_head, text='全选', style='Secondary.TButton',
+            feedback_list_head, text='全选', style='Quiet.TButton',
             command=self.on_select_all_feedbacks, state='disabled')
         self.feedback_select_button.pack(side=RIGHT, padx=(self.px(8), 0))
 
@@ -2495,19 +2485,19 @@ class App:
             text='还没有反馈文件 · 连接登录态后点「列出反馈」',
             bg=CARD, fg=TEXT_FAINT, font=(FONT, 10),
             wraplength=self.px(380), justify='center')
-        self.feedback_empty_text.pack(pady=(self.px(6), 0))
+        self.feedback_empty_text.pack(pady=(self.px(8), 0))
         self.feedback_empty.place(relx=0.5, rely=0.55, anchor='center')
         self.feedback_empty.lift()
 
         feedback_row = ttk.Frame(feedback, style='Card.TFrame')
-        feedback_row.grid(row=4, column=0, sticky='ew', pady=(self.px(10), 0))
+        feedback_row.grid(row=4, column=0, sticky='ew', pady=(self.px(12), 0))
         self.feedback_badge_count = tk.Label(
             feedback_row, text='已选 0 项', bg=CARD, fg=TEXT_MUTED,
             font=(FONT, 10))
         self.feedback_badge_count.pack(side=LEFT)
         ttk.Label(feedback_row, text='点选择列勾选 · 点名称展开 · '
                                      '每个文件可单独选择',
-                  style='Faint.TLabel').pack(side=LEFT, padx=(12, 0))
+                  style='Faint.TLabel').pack(side=LEFT, padx=(self.px(12), 0))
         self.feedback_export_button = ttk.Button(
             feedback_row, text='导出所选反馈', style='Primary.TButton',
             command=self.on_export_feedbacks, state='disabled')
@@ -2519,7 +2509,7 @@ class App:
             collapsible=True, expanded=False, px=self.px,
             on_toggle=self.on_toggle_feedback_log)
         self.feedback_log.frame.grid(row=5, column=0, sticky='ew',
-                                     pady=(self.px(10), 0))
+                                     pady=(self.px(12), 0))
 
         # ---------- 状态 / 页脚 ----------
         # 先占住窗口底部，再让内容区拿剩余高度：窗口再矮，底部主按钮
@@ -2766,7 +2756,7 @@ class App:
             if self.account_row.winfo_manager():
                 self.account_row.pack_forget()
         elif not self.account_row.winfo_manager():
-            self.account_row.pack(fill=X, pady=(self.px(10), 0),
+            self.account_row.pack(fill=X, pady=(self.px(8), 0),
                                   before=self.hint_label)
 
         if client_mode and not busy:
@@ -4278,10 +4268,7 @@ class App:
         for name in visible:
             button = tk.Button(
                 self.feedback_class_bar, text=self._feedback_chip_text(name),
-                bd=0, relief='flat',
-                highlightthickness=1,
-                highlightbackground=BORDER_STRONG,
-                highlightcolor=BORDER_STRONG,
+                bd=0, relief='flat', highlightthickness=0,
                 padx=self.px(12), pady=self.px(6), font=(FONT, 10),
                 bg=CARD, fg=TEXT_DARK, cursor='hand2',
                 activebackground=SURFACE_ALT, activeforeground=TEXT_DARK,
@@ -4296,9 +4283,7 @@ class App:
             self.feedback_more_button = tk.Button(
                 self.feedback_class_bar, text=more_text,
                 image=chevron, compound='right' if chevron else 'none',
-                bd=0, relief='flat', highlightthickness=1,
-                highlightbackground=BORDER_STRONG,
-                highlightcolor=BORDER_STRONG,
+                bd=0, relief='flat', highlightthickness=0,
                 padx=self.px(12), pady=self.px(6), font=(FONT, 10),
                 bg=SURFACE_ALT, fg=TEXT_MUTED, cursor='hand2',
                 activebackground=SURFACE, activeforeground=TEXT_DARK,
@@ -4729,7 +4714,7 @@ class App:
 
     # ---------- 更新检查 ----------
     def on_check_update(self) -> None:
-        """设置里的「一键更新」入口：沿用原有更新检查逻辑。"""
+        """设置里的「检查更新」入口。"""
 
         if self._update_busy:
             return
@@ -4754,7 +4739,7 @@ class App:
 
     def _finish_update_check(self, payload) -> None:
         self._update_busy = False
-        self._set_update_controls('一键更新', 'normal')
+        self._set_update_controls('检查更新', 'normal')
         if not isinstance(payload, dict):
             payload = {'status': 'error', 'message': '更新检查返回格式不正确。'}
         status = payload.get('status')
@@ -4798,14 +4783,14 @@ class App:
             win.grab_set()
         except Exception:  # noqa: BLE001
             pass
-        body = ttk.Frame(win, padding=(self.px(18), self.px(16)))
+        body = ttk.Frame(win, padding=(self.px(20), self.px(16)))
         body.pack(fill=BOTH, expand=True)
 
         if status == 'update':
             ttk.Label(body, text='发现新版本', style='SectionSmall.TLabel').pack(
                 anchor='w')
             ttk.Label(body, text='最新版本：v%s' % latest,
-                      style='Muted.TLabel').pack(anchor='w', pady=(8, 2))
+                      style='Muted.TLabel').pack(anchor='w', pady=(self.px(8), self.px(2)))
             ttk.Label(body, text='当前版本：v%s' % current,
                       style='Faint.TLabel').pack(anchor='w')
             if notes:
@@ -4813,27 +4798,27 @@ class App:
                                   notes.count('\n') + 1)),
                                wrap='word', bg=CARD, fg=TEXT_DARK,
                                relief='solid', bd=1, padx=self.px(8),
-                               pady=self.px(6), font=(FONT, 10))
+                               pady=self.px(8), font=(FONT, 10))
                 text.insert('1.0', notes)
                 text.configure(state='disabled')
-                text.pack(fill=X, pady=(10, 0))
+                text.pack(fill=X, pady=(self.px(12), 0))
         elif status == 'latest':
             ttk.Label(body, text='已是最新版本',
                       style='SectionSmall.TLabel').pack(anchor='w')
             ttk.Label(body, text='当前版本：v%s' % current,
-                      style='Muted.TLabel').pack(anchor='w', pady=(8, 0))
-            ttk.Label(body, text='暂时没有需要更新的内容。',
-                      style='Faint.TLabel').pack(anchor='w', pady=(4, 0))
+                      style='Muted.TLabel').pack(anchor='w', pady=(self.px(8), 0))
+            ttk.Label(body, text='暂时没有需要更新的内容',
+                      style='Faint.TLabel').pack(anchor='w', pady=(self.px(4), 0))
         else:
             ttk.Label(body, text='检查更新失败',
                       style='SectionSmall.TLabel').pack(anchor='w')
-            detail = str(result.get('message') or '无法连接更新服务器。')
+            detail = str(result.get('message') or '无法连接更新服务器')
             ttk.Label(body, text=detail, style='Muted.TLabel',
                       wraplength=self.px(440), justify=LEFT).pack(
-                          anchor='w', pady=(8, 0))
+                          anchor='w', pady=(self.px(8), 0))
 
         actions = ttk.Frame(body)
-        actions.pack(fill=X, pady=(16, 0))
+        actions.pack(fill=X, pady=(self.px(16), 0))
 
         ttk.Button(actions, text='关闭', style='Secondary.TButton',
                    command=win.destroy).pack(side=RIGHT)
@@ -4842,7 +4827,7 @@ class App:
             def open_download() -> None:
                 try:
                     webbrowser.open(target_url)
-                    self.status.set('已打开更新下载页。')
+                    self.status.set('已打开更新下载页')
                 except Exception as error:  # noqa: BLE001
                     messagebox.showwarning(APP_NAME, '打开下载页失败：%s' % error)
             ttk.Button(actions, text='打开下载页', style='Primary.TButton',
