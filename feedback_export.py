@@ -94,6 +94,9 @@ def _ceil_minutes(seconds: Any) -> str:
     return str(int(math.ceil(value / 60.0)))
 
 
+_CN_TZ = datetime.timezone(datetime.timedelta(hours=8))
+
+
 def _fmt_time(milliseconds: Any, seconds: bool = True) -> str:
     try:
         stamp = int(milliseconds or 0)
@@ -102,7 +105,7 @@ def _fmt_time(milliseconds: Any, seconds: bool = True) -> str:
     if stamp <= 0:
         return NO_VALUE
     try:
-        moment = datetime.datetime.fromtimestamp(stamp / 1000)
+        moment = datetime.datetime.fromtimestamp(stamp / 1000, tz=_CN_TZ)
     except (TypeError, ValueError, OSError, OverflowError):
         return NO_VALUE
     return moment.strftime(
@@ -823,7 +826,7 @@ def _homework_filename(item: dict) -> str:
     stamp = homework_time(item)
     try:
         prefix = datetime.datetime.fromtimestamp(
-            int(stamp) / 1000).strftime('%Y%m%d-%H%M')
+            int(stamp) / 1000, tz=_CN_TZ).strftime('%Y%m%d-%H%M')
     except (TypeError, ValueError, OSError, OverflowError):
         prefix = '00000000-0000'
     title = safe_filename(homework_title(item))[:80]
