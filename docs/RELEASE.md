@@ -159,6 +159,37 @@ xattr -dr com.apple.quarantine "/Applications/爱问云集成工具.app"
 
 ## 6. 本次发布记录
 
+### v2.3.6 · 2026-11-26
+
+- tag：`v2.3.6`（发布提交 `30e268c`）。
+- 内容：修复 2.3.5 在部分 Windows 环境启动时报 PyInstaller onefile
+  `Security validation failure: unexpected name of application's home directory!`
+  的问题——将打包依赖固定为 `pyinstaller==6.20.0`，不再使用 6.22.x 的该安全校验；
+  同时复核板书「按上课顺序 / 按板书类型」两套排序，保持独立且与爱问云
+  「按讲课顺序 / 按板书类型顺序」对应。
+- 验证：262 项单测通过；新增排序用例用同一组页码/时间冲突数据断言两种结果不同；
+  Windows 打包版 `--version-file` 返回 `2.3.6`。
+- 构建/发布：`build-release.yml` run `45751551298` **success**；preflight、
+  Windows、macOS arm64、macOS x64 全绿。首次 Publish 因 GitHub Release API
+  未及时关联 tag 失败，重新运行 Publish job 后成功。
+- Release 资产：
+  - Windows `21,662,778B` / SHA-256
+    `1ffef67f48862c28bf5fd35752edd9c2262ec876d9ee68d6c07a619edf99a217`
+  - macOS arm64 `17,977,878B` / SHA-256
+    `3cc1c5a54aa2d7db6e4c28f29116f8a49c2072d70107bd77f06dc66887e68c12`
+  - macOS x64 `19,390,951B` / SHA-256
+    `0a82f63518ed21317c55c104de8ecd2bc5fed9646aadf88c5a8c80c99c5c4a54`
+  - `macOS-DIAGNOSE.command` `2,423B`。
+- 服务器：`mirror-aiwenyun.yml` run `45752114394` success；三个安装包
+  与 `.sha256` 镜像到 `/downloads/aiwenyun/`，公网 HEAD 全 200，Windows
+  SHA-256 与 Release 一致。
+- 站点：`deploy.yml` run `45752097410` success；页面与软件管理卡片
+  v2.3.6，`macOS-README.html` 同步更新并返回 200。
+- 线上验收：下载页版本徽标 `v2.3.6`；下载的 Windows 包 `--version-file`
+  返回 `2.3.6`，SHA-256
+  `1ffef67f48862c28bf5fd35752edd9c2262ec876d9ee68d6c07a619edf99a217`
+  与 Release 一致。
+
 ### v2.3.5 · 2026-11-26
 
 - tag：`v2.3.5`（发布提交 `9440936`）。
