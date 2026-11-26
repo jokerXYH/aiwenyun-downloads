@@ -7,8 +7,8 @@
 
 - 唯一版本来源是 `config.py` 的 `APP_VERSION`。
 - Git tag 必须是 `vX.Y.Z`，且满足 `v${APP_VERSION}`（例如
-  `APP_VERSION = '2.3.1'` 对应 tag `v2.3.1`）。
-- 默认规则：修复用 patch（`2.3.1`），新增用户功能用 minor（`2.4.0`），
+  `APP_VERSION = '2.3.2'` 对应 tag `v2.3.2`）。
+- 默认规则：修复用 patch（`2.3.2`），新增用户功能用 minor（`2.4.0`），
   不兼容的大改才用 major。
 - 同步更新 `README.md` 标题、`docs/macOS使用说明.txt` 和 CI 默认版本；
   `build_macos.command` 直接读取 `config.py`，不再写死版本号。
@@ -46,13 +46,13 @@ chmod +x build_macos.command
 1. 提交版本号和代码改动：
    ```bash
    git add ...
-   git commit -m "release: 2.3.1（一键更新 + 发布规则 + macOS 脚本修复）"
+   git commit -m "release: 2.3.2（反馈导出保留 26秋 学期）"
    ```
 2. 打 tag 并推送：
    ```bash
-   git tag -a v2.3.1 -m "爱问云集成工具 2.3.1"
+   git tag -a v2.3.2 -m "爱问云集成工具 2.3.2"
    git push origin main
-   git push origin v2.3.1
+   git push origin v2.3.2
    ```
 3. `.github/workflows/build-release.yml` 使用同一个 tag 的 concurrency，
    重复触发会取消旧 run，避免两个构建同时覆盖 Release。随后依次：
@@ -68,8 +68,8 @@ chmod +x build_macos.command
 验证 Release 资产：
 
 ```bash
-gh release view v2.3.1
-# 或打开 https://github.com/jokerXYH/aiwenyun-downloads/releases/tag/v2.3.1
+gh release view v2.3.2
+# 或打开 https://github.com/jokerXYH/aiwenyun-downloads/releases/tag/v2.3.2
 ```
 
 ## 4. 发布到 jokerx.top
@@ -158,6 +158,36 @@ xattr -dr com.apple.quarantine "/Applications/爱问云集成工具.app"
   不再提示已失效的右键打开。
 
 ## 6. 本次发布记录
+
+### v2.3.2 · 2026-11-26
+
+- tag：`v2.3.2`（发布提交 `b09ee74`）。
+- 内容：反馈文件导出在常态（未显式筛选季度）下保留「26秋」等学期前缀，
+  列表、班级目录和 CSV 文件名与显式筛选 26秋 一致。
+- 验证：157 项单测通过；真实登录态按「最近30天」导出 15 个课次反馈、
+  39 个 CSV、0 失败，所有路径包含 `26秋`；Windows 包 `--version-file`
+  返回 `2.3.2`。
+- 构建/发布：`build-release.yml` run `45742407674` **success**；
+  preflight、Windows、macOS arm64、macOS x64 全绿，Publish release 首次
+  因 Release API 未关联 tag 失败，重跑失败 job 后成功。
+- Release 资产：
+  - Windows `21,685,262B` / SHA-256
+    `4b3015e84801d5b7ba95cb4f9455d6ef1ecf81e2f227fd28fa46ffc96bb3ae93`
+  - macOS arm64 `17,973,815B` / SHA-256
+    `01917b319660b3f23b035c79497fa5aa838994247350903d1b1e27467957aeee`
+  - macOS x64 `19,388,528B` / SHA-256
+    `843b600cf33f8459bac5cae0127f471a72d610568acd375e957b380c11b26b9d`
+  - `macOS-DIAGNOSE.command` `2,423B`。
+- 服务器：`mirror-aiwenyun.yml` run `45742807389` success；三个安装包
+  与 `.sha256` 镜像到 `/downloads/aiwenyun/`，大小和 SHA-256 与 Release
+  一致。
+- 站点：`deploy.yml` run `45742997805` success；页面与软件管理卡片
+  v2.3.2，`macOS-README.html` 同步更新。
+- 线上验收：下载页版本徽标 `v2.3.2`，Windows 包 `--version-file` 返回
+  `2.3.2`；三个 `.sha256` 与 Release 资产一致。
+- 过程记录：首次 Publish 因 GitHub Release API 未把新 tag 关联到草稿
+  Release 而失败（生成了 `untagged-*` 草稿链接）；保留原 run，重跑失败
+  job 后按幂等逻辑找到 `v2.3.2` 草稿并完成上传发布，未改动 CI 配置。
 
 ### v2.3.1 · 2026-11-26
 
