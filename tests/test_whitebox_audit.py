@@ -151,7 +151,7 @@ class ConfigBranchTests(unittest.TestCase):
                              'LOCALAPPDATA': str(root / 'local')}, clear=False):
                 self.assertEqual(config.client_candidates(), [exe])
         with patch.object(config.sys, 'platform', 'win32'), \
-                patch.object(config.os, 'startfile') as startfile:
+                patch.object(config.os, 'startfile', create=True) as startfile:
             config.open_path(Path('x.txt'))
             startfile.assert_called_once()
         with patch.object(config.sys, 'platform', 'linux'), \
