@@ -181,8 +181,8 @@ xattr -dr com.apple.quarantine "/Applications/爱问云集成工具.app"
 - 服务器：`mirror-aiwenyun.yml` run `45742807389` success；三个安装包
   与 `.sha256` 镜像到 `/downloads/aiwenyun/`，大小和 SHA-256 与 Release
   一致。
-- 站点：`deploy.yml` run `45742997805` success；页面与软件管理卡片
-  v2.3.2，`macOS-README.html` 同步更新。
+- 站点：`deploy.yml` run `45742997805`、`45743184277` success；页面与
+  软件管理卡片 v2.3.2，`macOS-README.html` 同步更新。
 - 线上验收：下载页版本徽标 `v2.3.2`，Windows 包 `--version-file` 返回
   `2.3.2`；三个 `.sha256` 与 Release 资产一致。
 - 过程记录：首次 Publish 因 GitHub Release API 未把新 tag 关联到草稿
