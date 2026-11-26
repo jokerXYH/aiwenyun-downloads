@@ -484,7 +484,11 @@ def _new_bucket(identity: dict) -> dict:
 
 
 def _bucket_labels(buckets: dict[tuple[str, str], dict]) -> dict:
-    """给每个班期生成显示名；同名班跨班期时带学期/编号前缀。"""
+    """给每个班期生成显示名；能识别学期时始终带学期前缀。
+
+    常态导出（没有显式筛选季度）也要保留「26秋」这类班期信息，
+    不能因为当前时间段只有一个学期就退化成「7MA+31」。
+    """
 
     by_short: dict[str, list[tuple[str, str]]] = {}
     for key, bucket in buckets.items():
@@ -493,7 +497,9 @@ def _bucket_labels(buckets: dict[tuple[str, str], dict]) -> dict:
     labels: dict[tuple[str, str], str] = {}
     for short, keys in by_short.items():
         if len(keys) == 1:
-            labels[keys[0]] = short
+            bucket = buckets[keys[0]]
+            term = str(bucket.get('term') or '')
+            labels[keys[0]] = (term + short) if term else short
             continue
         candidates: dict[str, list[tuple[str, str]]] = {}
         for key in keys:

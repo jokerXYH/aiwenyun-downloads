@@ -8,8 +8,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from feedback_export import (ATTEND_PATH, CONSOLIDATION, CSV_HEADER, HISTORY,
-                             PREVIEW, SIGNIN_PATH, STUDENT_DETAIL_PATH,
+from feedback_export import (ATTEND_PATH, COMPONENT_ORDER, CONSOLIDATION,
+                             CSV_HEADER, HISTORY, PREVIEW, SIGNIN_PATH,
+                             STUDENT_DETAIL_PATH,
                              WATCH_PATH, build_feedback_bundles,
                              build_feedback_rows, chinese_number,
                              export_bundle, export_feedback_bundles,
@@ -165,7 +166,7 @@ class BundleAssemblyTests(unittest.TestCase):
         self.assertEqual([bundle['title'] for bundle in bundles],
                          ['第四节课反馈', '第十一节课反馈'])
         for bundle in bundles:
-            self.assertEqual(bundle['class'], '7MA+31')
+            self.assertEqual(bundle['class'], '26秋7MA+31')
             self.assertFalse(bundle['missing'])
             self.assertIsNotNone(bundle['components'][PREVIEW])
             self.assertIsNotNone(bundle['components'][CONSOLIDATION])
@@ -193,7 +194,7 @@ class BundleAssemblyTests(unittest.TestCase):
         bundles = build_feedback_bundles(
             history, homework, class_names=['2026027MA+31'])
         self.assertEqual([bundle['class'] for bundle in bundles],
-                         ['7MA+31', '7MA+31'])
+                         ['26秋7MA+31', '26秋7MA+31'])
         self.assertEqual([bundle['lesson'] for bundle in bundles], [11, 4])
         self.assertNotIn('7M备课', {bundle['class'] for bundle in bundles})
 
@@ -201,9 +202,34 @@ class BundleAssemblyTests(unittest.TestCase):
         bundles = build_feedback_bundles(
             [make_history(11)], [], class_names=['2026027MA+31'])
         self.assertEqual(len(bundles), 1)
-        self.assertEqual(bundles[0]['class'], '7MA+31')
+        self.assertEqual(bundles[0]['class'], '26秋7MA+31')
         self.assertEqual(bundles[0]['components'][HISTORY]['shortDesc'],
                          '26秋7MA+31（数形许）-11')
+
+    def test_default_export_keeps_autumn_term_like_explicit_filter(self):
+        history = [make_history(11)]
+        homework = [make_homework(11, PREVIEW),
+                    make_homework(10, CONSOLIDATION)]
+        default = build_feedback_bundles(history, homework)
+        self.assertEqual([bundle['class'] for bundle in default],
+                         ['26秋7MA+31'])
+        self.assertEqual(feedback_component_name(default[0], PREVIEW),
+                         '26秋7MA+31-【数·课前预习】专题十一.csv')
+
+        for class_names in (['26秋7MA+31'], ['2026027MA+31']):
+            explicit = build_feedback_bundles(
+                history, homework, class_names=class_names)
+            self.assertEqual([bundle['class'] for bundle in explicit],
+                             ['26秋7MA+31'])
+            self.assertEqual(
+                [(bundle['class'], bundle['lesson'],
+                  [feedback_component_name(bundle, kind)
+                   for kind in COMPONENT_ORDER])
+                 for bundle in default],
+                [(bundle['class'], bundle['lesson'],
+                  [feedback_component_name(bundle, kind)
+                   for kind in COMPONENT_ORDER])
+                 for bundle in explicit])
 
     def test_same_class_name_in_two_terms_stays_separate(self):
         history = [
@@ -290,18 +316,18 @@ class BundleExportTests(unittest.TestCase):
             out = Path(directory)
             result = export_feedback_bundles(FakeSession(), bundles, out)
             self.assertFalse(result['failed'])
-            lesson11 = out / '7MA+31' / '第十一节课反馈'
-            lesson4 = out / '7MA+31' / '第四节课反馈'
-            lesson12 = out / '7MA+31' / '第十二节课反馈'
+            lesson11 = out / '26秋7MA+31' / '第十一节课反馈'
+            lesson4 = out / '26秋7MA+31' / '第四节课反馈'
+            lesson12 = out / '26秋7MA+31' / '第十二节课反馈'
             self.assertTrue(lesson11.is_dir())
             self.assertTrue(lesson4.is_dir())
             self.assertTrue(lesson12.is_dir())
-            self.assertTrue((lesson11 / '7MA+31-【数·课前预习】专题十一.csv').is_file())
-            self.assertTrue((lesson11 / '7MA+31-【数·课后巩固】专题十.csv').is_file())
+            self.assertTrue((lesson11 / '26秋7MA+31-【数·课前预习】专题十一.csv').is_file())
+            self.assertTrue((lesson11 / '26秋7MA+31-【数·课后巩固】专题十.csv').is_file())
             self.assertTrue((lesson11 /
                              '历史课堂权限-第十一节课统计报告.csv').is_file())
-            self.assertTrue((lesson4 / '7MA+31-【数·课前预习】专题四.csv').is_file())
-            self.assertTrue((lesson4 / '7MA+31-【数·课后巩固】专题三.csv').is_file())
+            self.assertTrue((lesson4 / '26秋7MA+31-【数·课前预习】专题四.csv').is_file())
+            self.assertTrue((lesson4 / '26秋7MA+31-【数·课后巩固】专题三.csv').is_file())
             self.assertTrue((lesson4 /
                              '历史课堂权限-第四节课统计报告.csv').is_file())
             self.assertTrue(lesson12.is_dir())
@@ -357,15 +383,15 @@ class BundleExportTests(unittest.TestCase):
         bundle['selected'] = [PREVIEW, HISTORY]
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory)
-            folder = out / '7MA+31' / '第十一节课反馈'
+            folder = out / '26秋7MA+31' / '第十一节课反馈'
             folder.mkdir(parents=True)
             keep = folder / '课前预习-用户备注.txt'
             keep.write_text('keep', encoding='utf-8')
             result = export_feedback_bundles(
                 FakeSession(), [bundle], out)
-            self.assertTrue((folder / '7MA+31-【数·课前预习】专题十一.csv').is_file())
+            self.assertTrue((folder / '26秋7MA+31-【数·课前预习】专题十一.csv').is_file())
             self.assertTrue((folder / '历史课堂权限-第十一节课统计报告.csv').is_file())
-            self.assertFalse((folder / '7MA+31-【数·课后巩固】专题十.csv').exists())
+            self.assertFalse((folder / '26秋7MA+31-【数·课后巩固】专题十.csv').exists())
             self.assertTrue(keep.is_file())
             self.assertFalse(any(path.suffix.lower() == '.txt'
                                  for path in folder.rglob('*')
