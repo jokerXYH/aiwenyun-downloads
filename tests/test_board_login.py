@@ -565,6 +565,27 @@ class PageOrderTests(unittest.TestCase):
         self.assertEqual([p['file'] for p in pages],
                          ['1.png', '2.png', 'F1_2_2.png', 'F1_2_3.png'])
 
+    def test_time_and_type_orders_are_distinct(self):
+        pages = [
+            {'kind': 'board', 'time': 300, 'file': 'b1',
+             'pageno': 1, 'cw': 0, 'seq': 0},
+            {'kind': 'board', 'time': 100, 'file': 'b2',
+             'pageno': 2, 'cw': 0, 'seq': 1},
+            {'kind': 'annotate', 'time': 200, 'file': 'a2',
+             'pageno': 2, 'cw': 1, 'seq': 2},
+            {'kind': 'annotate', 'time': 50, 'file': 'a1',
+             'pageno': 1, 'cw': 1, 'seq': 3},
+            {'kind': 'small', 'time': 250, 'file': 's1',
+             'pageno': 0, 'cw': 0, 'seq': 4},
+        ]
+        # 按上课顺序：所有类型按课堂时间线交错。
+        self.assertEqual([p['file'] for p in order_pages(pages, 'time')],
+                         ['a1', 'b2', 'a2', 's1', 'b1'])
+        # 按板书类型：独立板书 -> 小黑板 -> 课件批注；类型内保留
+        # 原始页序（课件按 cw/pageno），不能退化成按时间排序。
+        self.assertEqual([p['file'] for p in order_pages(pages, 'type')],
+                         ['b1', 'b2', 's1', 'a1', 'a2'])
+
 
 class LoginErrorTests(unittest.TestCase):
     def test_error_is_runtime_error(self):

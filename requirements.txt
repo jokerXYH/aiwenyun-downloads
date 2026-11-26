@@ -4,4 +4,6 @@ certifi>=2024.2.2
 Pillow>=10.0
 
 # 打包依赖（仅构建 exe 时需要）
-pyinstaller>=6.0
+# 固定 6.20.0：6.22.1+ 的 onefile 安全校验会在部分 Windows 环境误报
+# “Security validation failure: unexpected name of application's home directory!”。
+pyinstaller==6.20.0

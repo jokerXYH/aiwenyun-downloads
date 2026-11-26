@@ -6,7 +6,7 @@ on:
       tag:
         description: 'Release tag'
         required: true
-        default: 'v2.3.5'
+        default: 'v2.3.6'
 
 jobs:
   verify:

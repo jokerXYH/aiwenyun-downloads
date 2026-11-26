@@ -1201,7 +1201,12 @@ KIND_ORDER = {'board': 0, 'small': 1, 'annotate': 2}
 
 
 def order_pages(pages: list[dict], sort_mode: str) -> list[dict]:
-    """排序。time=按上课顺序；type=按板书类型分段（段内仍按时间）。"""
+    """排序，两种模式必须保持独立。
+
+    time=按讲课顺序：所有类型按课堂时间线交错，和爱问云“按讲课顺序下载”一致；
+    type=按板书类型：独立板书 -> 小黑板 -> 课件批注，类型内保留原始页序
+    （课件按 cw/pageno，避免把同一份课件的页打乱）。
+    """
 
     if sort_mode == 'type':
         return sorted(pages, key=lambda p: (KIND_ORDER.get(p['kind'], 9),
