@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 import threading
@@ -167,8 +168,14 @@ def fetch_homeworks(session: ApiSession, date_from_ms: int, date_to_ms: int,
         if cancel_event is not None and cancel_event.is_set():
             raise HomeworkCancelled('已取消列出作业')
         data = _list_page(session, mark)
+        if not isinstance(data, dict):
+            raise RuntimeError('作业列表响应格式异常')
         obj = data.get('obj') or {}
+        if not isinstance(obj, dict):
+            raise RuntimeError('作业列表响应格式异常')
         rows = obj.get('list') or []
+        if not isinstance(rows, list):
+            raise RuntimeError('作业列表响应格式异常')
         if not rows:
             break
         newest = 0
@@ -221,8 +228,14 @@ def fetch_scores(session: ApiSession, zuoye_id: str) -> dict:
     """一个作业框下全班学生的成绩记录。"""
 
     data = session.post(HOMEWORK_SCORES_PATH, {'zuoyeId': zuoye_id})
+    if not isinstance(data, dict):
+        raise RuntimeError('作业成绩响应格式异常')
     obj = data.get('obj') or {}
+    if not isinstance(obj, dict):
+        raise RuntimeError('作业成绩响应格式异常')
     students = obj.get('studentZuoyeInfo') or []
+    if not isinstance(students, list):
+        students = []
     return {'info': obj.get('zuoyeInfo') or {},
             'students': [row for row in students if isinstance(row, dict)]}
 
@@ -343,8 +356,17 @@ def write_csv(path: Path, homework: dict, students: list[dict]) -> int:
         lines.append(','.join(_csv_cell(cell) for cell in row))
     # 末尾不加多余换行：平台的文件最后一行后面就是 EOF
     text = '\r\n'.join(lines)
-    with path.open('w', encoding='utf-8-sig', newline='') as handle:
-        handle.write(text)
+    temp = path.with_name('.%s.tmp%s' % (path.stem, path.suffix))
+    try:
+        with temp.open('w', encoding='utf-8-sig', newline='') as handle:
+            handle.write(text)
+        os.replace(temp, path)
+    finally:
+        if temp.exists():
+            try:
+                temp.unlink()
+            except OSError:
+                pass
     return len(rows)
 
 
@@ -390,15 +412,28 @@ def export_homeworks(session: ApiSession, homeworks: list[dict],
         students = data['students']
         info = summarize(students)
         # 人多的时候最怕悄悄少人：和「应交」对不上就明确标出来
-        expected = int(homework.get('zuoyesNum') or 0)
+        try:
+            expected = int(homework.get('zuoyesNum') or 0)
+        except (TypeError, ValueError):
+            expected = 0
         complete = not expected or len(students) >= expected
         if not complete and logger is not None:
             logger('[!] %s：接口只返回 %d 人，应交 %d 人，可能有学生没取到'
                    % (title, len(students), expected))
         # 文件名照爱问云导出的样式：班级-作业框名.csv，直接放在所选目录里，
-        # 不再套一层班级文件夹。
-        path = out_root / statistics_filename(homework)
-        count = write_csv(path, homework, students)
+        # 不再套一层班级文件夹。单个文件写入失败只记这一项，不能中断整批。
+        try:
+            path = out_root / statistics_filename(homework)
+            count = write_csv(path, homework, students)
+        except TokenExpired:
+            raise
+        except Exception as error:  # noqa: BLE001
+            message = '%s：%s' % (title, error)
+            failed.append({'title': title, 'group': group, 'error': str(error)})
+            if logger is not None:
+                logger('[%d/%d] [失败] %s' % (index, total, message))
+            emit(phase='failed', index=index, done=index, name=title)
+            continue
         files.append({'title': title, 'group': group, 'path': str(path),
                       'rows': count, 'summary': info, 'complete': complete,
                       'expected': expected})

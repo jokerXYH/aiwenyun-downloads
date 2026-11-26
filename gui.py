@@ -141,7 +141,10 @@ def _enable_dpi_awareness() -> None:
 def _fmt_clock(seconds: float) -> str:
     """把秒数排成 00:42 / 1:02:03 的等宽格式。"""
 
-    value = max(0, int(seconds or 0))
+    try:
+        value = max(0, int(seconds or 0))
+    except (TypeError, ValueError, OverflowError):
+        value = 0
     hours, remainder = divmod(value, 3600)
     minutes, secs = divmod(remainder, 60)
     if hours:
@@ -3547,7 +3550,13 @@ class App:
 
     def _board_work(self, records: list[dict], sort_mode: str,
                     out_root: Path) -> None:
-        out_root.mkdir(parents=True, exist_ok=True)
+        try:
+            out_root.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            # 保存目录不可创建（权限/同名文件/磁盘满）时必须回报界面，
+            # 否则工作线程静默退出，按钮会一直停在「正在导出」。
+            self._post('error', '无法创建保存目录：%s' % error)
+            return
         for attempt in range(2):    # token 失效自动重取一次
             session = self._board_session()
             try:

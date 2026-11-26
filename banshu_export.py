@@ -127,6 +127,8 @@ PAGE_TIMEOUT = 30
 PAGE_RETRIES = 3
 PDF_ZLIB_LEVEL = 3
 BS_POLL_DELAYS = (0.0, 2.5, 4.0, 6.0, 8.0, 10.0, 12.0)
+# listRecord 分页兜底：服务端 mark/total 异常时，不能让列表接口无限翻页。
+MAX_RECORD_PAGES = 200
 
 
 def log(*args: Any) -> None:
@@ -513,7 +515,8 @@ def fallback_class_names(records: list[dict]) -> list[str]:
                 add(item)
             return
         text = str(value or '').strip()
-        if text and text not in names and len(text) <= 80:
+        if (text and text not in names and len(text) <= 80
+                and not re.fullmatch(r'[\d\s:_-]+', text)):
             names.append(text)
 
     for record in records or []:
@@ -1014,22 +1017,37 @@ def fetch_records(session: ApiSession, date_from_ms: int, date_to_ms: int,
     rows: list[dict] = []
     index = 0
     total = None
-    while True:
+    page_size = max(1, int(page_size))
+    for _page in range(MAX_RECORD_PAGES):
         if cancel_event is not None and cancel_event.is_set():
             raise BatchCancelled('已取消列出板书。')
         resp = session.post(LIST_RECORD, {
             'dateFrom': int(date_from_ms), 'dateTo': int(date_to_ms),
             'indexStart': index, 'pageSize': page_size,
             'groupId': None, 'xx': ''})
-        if resp.get('code') != 0:
-            raise RuntimeError('listRecord 返回 code=%s' % resp.get('code'))
+        if not isinstance(resp, dict):
+            raise RuntimeError('listRecord 响应格式异常')
+        code = resp.get('code')
+        if not (code in (0, None) or str(code) == '0'):
+            raise RuntimeError('listRecord 返回 code=%s' % code)
         obj = resp.get('obj') or {}
+        if not isinstance(obj, dict):
+            raise RuntimeError('listRecord 响应格式异常')
         chunk = obj.get('list') or []
-        rows.extend(chunk)
-        total = obj.get('total', total)
+        if not isinstance(chunk, list):
+            raise RuntimeError('listRecord 响应格式异常')
+        rows.extend(item for item in chunk if isinstance(item, dict))
+        raw_total = obj.get('total')
+        if raw_total is not None:
+            try:
+                total = int(raw_total)
+            except (TypeError, ValueError):
+                pass
         if len(chunk) < page_size or (total is not None and len(rows) >= total):
             return rows
         index += page_size
+    raise RuntimeError('listRecord 分页超过上限（%d 页），已停止以免无限请求'
+                       % MAX_RECORD_PAGES)
 
 
 class BsUnavailable(RuntimeError):
@@ -1052,13 +1070,18 @@ def bs_manifest(session: ApiSession, file_common_id: str,
 
     resp = session.post(GET_BS_SIGN, {'fileCommonId': file_common_id,
                                        'genBsType': gen_bs_type})
-    if resp.get('code') != 0 or not (resp.get('obj') or {}).get('signature'):
-        raise BsUnavailable('getBsSign 失败 code=%s' % resp.get('code'))
-    obj = resp['obj']
+    if not isinstance(resp, dict):
+        raise BsUnavailable('getBsSign 响应格式异常')
+    obj = resp.get('obj') or {}
+    code = resp.get('code')
+    if (not (code in (0, None) or str(code) == '0')
+            or not isinstance(obj, dict) or not obj.get('signature')):
+        raise BsUnavailable('getBsSign 失败 code=%s' % code)
     payload = {k: v for k, v in obj.items() if k != 'signature'}
     payload['signature'] = obj['signature']
 
     last: dict = {}
+    gs: dict = {}
     for attempt, delay in enumerate(poll_delays, 1):
         if cancel_event is not None and cancel_event.is_set():
             raise BatchCancelled('已取消板书导出。')
@@ -1069,22 +1092,36 @@ def bs_manifest(session: ApiSession, file_common_id: str,
             else:
                 time.sleep(delay)
         resp = session.post(GEN_BS, payload)
-        if resp.get('code') != 0:
-            raise BsUnavailable('genBs 失败 code=%s' % resp.get('code'))
-        last = gs = resp.get('obj') or {}
+        if not isinstance(resp, dict):
+            raise BsUnavailable('genBs 响应格式异常')
+        code = resp.get('code')
+        if not (code in (0, None) or str(code) == '0'):
+            raise BsUnavailable('genBs 失败 code=%s' % code)
+        item = resp.get('obj') or {}
+        if not isinstance(item, dict):
+            raise BsUnavailable('genBs 响应格式异常')
+        last = gs = item
         if str(gs.get('status')) == '2':
             break
     else:
         raise BsUnavailable('板书生成中，稍后重试（status=%s）'
                             % last.get('status'))
 
-    raw = http_get(gs['url'], downloader=downloader,
+    url = str(gs.get('url') or '').strip()
+    if not url:
+        raise BsUnavailable('genBs 未返回板书包地址')
+    raw = http_get(url, downloader=downloader,
                    cancel_event=cancel_event)
     try:
         data = gzip.decompress(raw)
     except OSError:
         data = raw
-    manifest = json.loads(data.decode('utf-8'))
+    try:
+        manifest = json.loads(data.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise BsUnavailable('板书清单不是有效 JSON') from error
+    if not isinstance(manifest, dict):
+        raise BsUnavailable('板书清单格式异常')
     return manifest, str(gs.get('pathprefix') or '').rstrip('/')
 
 
@@ -1102,7 +1139,12 @@ def collect_pages(manifest: dict) -> list[dict]:
     """
 
     pages: list[dict] = []
-    for seq, cmd in enumerate(manifest.get('cmds') or []):
+    if not isinstance(manifest, dict):
+        return pages
+    cmds = manifest.get('cmds') or []
+    if not isinstance(cmds, list):
+        cmds = []
+    for seq, cmd in enumerate(cmds):
         # cmds 页: [0, 215, 页号, 0, "attach1", 时间ms, "1.png", 字节?]
         if isinstance(cmd, list) and len(cmd) >= 7 and isinstance(cmd[6], str):
             name = cmd[6]
@@ -1112,17 +1154,30 @@ def collect_pages(manifest: dict) -> list[dict]:
             pages.append({'kind': 'board', 'time': stamp, 'file': name,
                           'pageno': seq + 1, 'cw': 0, 'seq': seq})
 
-    for cw_index, cw in enumerate(manifest.get('coursewares') or [], 1):
-        for entry in cw.get('bs') or []:
+    coursewares = manifest.get('coursewares') or []
+    if not isinstance(coursewares, list):
+        coursewares = []
+    for cw_index, cw in enumerate(coursewares, 1):
+        if not isinstance(cw, dict):
+            continue
+        entries = cw.get('bs') or []
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
             name = entry.get('path') or ''
-            if not name.lower().endswith(IMAGE_EXT):
+            if not isinstance(name, str) or not name.lower().endswith(IMAGE_EXT):
                 continue
             stamp = entry.get('BsTime', 0) or 0
             pages.append({'kind': 'annotate', 'time': stamp, 'file': name,
                           'pageno': entry.get('pageno', 0), 'cw': cw_index,
                           'seq': stamp})
 
-    for seq, small in enumerate(manifest.get('smallboards') or []):
+    smallboards = manifest.get('smallboards') or []
+    if not isinstance(smallboards, list):
+        smallboards = []
+    for seq, small in enumerate(smallboards):
         # 小黑板条目结构未见实例，按含图片字段兜底解析
         names = []
         if isinstance(small, dict):
@@ -1384,10 +1439,20 @@ def build_pdf_pages(pages: list[PdfPage], dedupe: bool = True
 
 
 def build_pdf(images: list[tuple[bytes, int, int]]) -> tuple[bytes, list[dict]]:
-    """兼容旧接口：把 RGB 图像序列写成 PDF。"""
+    """兼容旧接口：把 RGB 图像序列写成 PDF。
 
-    pages = [PdfPage('', width, height, zlib.compress(raw, PDF_ZLIB_LEVEL))
-             for _name, raw, width, height in images]
+    历史调用方传 ``(name, raw, width, height)``，新类型标注是
+    ``(raw, width, height)``；两种都接受，避免按文档调用时直接解包失败。
+    """
+
+    pages = []
+    for image in images:
+        if len(image) == 4:
+            _name, raw, width, height = image
+        else:
+            raw, width, height = image
+        pages.append(PdfPage('', width, height,
+                             zlib.compress(raw, PDF_ZLIB_LEVEL)))
     return build_pdf_pages(pages, dedupe=False)
 
 
@@ -1792,8 +1857,7 @@ def run_board_export(session: ApiSession, out_root: Path, sort_mode: str,
     """
 
     records = fetch_records(session, date_from_ms, date_to_ms)
-    records.sort(key=lambda r: (r.get('fileCommon') or {}).get('createTime')
-                 or r.get('createTime') or 0)
+    records.sort(key=record_time)
     # 用 liveInfo 的 groups 精确映射官方班级（26秋7MA+31 -> 2026027MA+31β1）
     try:
         enrich_record_groups(session, records)

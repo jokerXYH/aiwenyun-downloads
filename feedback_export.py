@@ -83,9 +83,11 @@ _LEADING_NUMBER_RE = re.compile(r'^\s*(\d{2,})')
 
 def _num(value: Any) -> float:
     try:
-        return float(value or 0)
+        number = float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+    # inf / nan 会让 math.ceil/切片/百分比直接抛异常，按缺失值处理。
+    return number if math.isfinite(number) else 0.0
 
 
 def _ceil_minutes(seconds: Any) -> str:
@@ -126,6 +128,15 @@ def _user_id(value: Any) -> str:
     if '_' in text:
         text = text.rsplit('_', 1)[-1]
     return text
+
+
+def _int_or(value: Any, default: int = 0) -> int:
+    """把接口里可能是字符串/None 的整数安全转成 int。"""
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _progress_label(value: Any) -> str:
@@ -703,8 +714,14 @@ def _attend_students(session: ApiSession, rid: str,
             'pageNum': page,
             'pageSize': PAGE_SIZE,
         })
+        if not isinstance(response, dict):
+            raise RuntimeError('签到名单响应格式异常')
         obj = response.get('obj') or {}
+        if not isinstance(obj, dict):
+            raise RuntimeError('签到名单响应格式异常')
         chunk = obj.get('list') or []
+        if not isinstance(chunk, list):
+            raise RuntimeError('签到名单响应格式异常')
         try:
             total = int(obj.get('total') or total or 0)
         except (TypeError, ValueError):
@@ -742,8 +759,14 @@ def _signin_students(session: ApiSession, liveclass: Any,
             'pageNum': page,
             'pageSize': PAGE_SIZE,
         })
+        if not isinstance(response, dict):
+            raise RuntimeError('完整名单响应格式异常')
         obj = response.get('obj') or {}
+        if not isinstance(obj, dict):
+            raise RuntimeError('完整名单响应格式异常')
         chunk = obj.get('list') or []
+        if not isinstance(chunk, list):
+            raise RuntimeError('完整名单响应格式异常')
         try:
             total = int(obj.get('total') or total or 0)
         except (TypeError, ValueError):
@@ -825,21 +848,25 @@ def _student_detail(session: ApiSession, student: dict, live_info: dict,
     student_id = _student_id(student)
     if not group_id or not student_id.isdigit():
         return {}
-    begin = live_info.get('startTime')
-    end = live_info.get('endTime')
+    try:
+        begin = int(live_info.get('startTime') or 0)
+        end = int(live_info.get('endTime') or 0)
+        duration = int(live_info.get('duration') or 0)
+        group_value = int(group_id)
+        teacher_value = int(teacher_id or 0)
+    except (TypeError, ValueError):
+        # 接口字段类型异常时只放弃这个学生的聚合数据，不能让整份 CSV 失败。
+        return {}
     if not begin:
         return {}
     if not end:
-        try:
-            end = int(begin) + int(live_info.get('duration') or 0) * 1000
-        except (TypeError, ValueError):
-            end = begin
+        end = begin + duration * 1000
     payload = {
-        'beginTime': int(begin),
-        'endTime': int(end),
-        'groupId': int(group_id),
+        'beginTime': begin,
+        'endTime': end,
+        'groupId': group_value,
         'studentId': int(student_id),
-        'teacherId': int(teacher_id or 0),
+        'teacherId': teacher_value,
     }
     return _optional_obj(
         session, STUDENT_DETAIL_PATH, payload, cancel_event=cancel_event)
@@ -873,7 +900,7 @@ def build_feedback_rows(students: list[dict], attend: list[dict],
             pass
     duration_minutes = _ceil_minutes(duration_seconds)
     class_type = CLASS_TYPE_LABELS.get(
-        int(live_info.get('mediaType') or 0), '实时课堂')
+        _int_or(live_info.get('mediaType')), '实时课堂')
     teacher = str(
         live_info.get('teacherName')
         or record.get('teacherName')
@@ -1215,7 +1242,7 @@ def export_feedback_bundles(session: ApiSession,
         [bundle for bundle in bundles or [] if isinstance(bundle, dict)],
         key=lambda item: (group_sort_key(str(item.get('class') or '')),
                           str(item.get('class') or ''),
-                          int(item.get('lesson') or 0)))
+                          _int_or(item.get('lesson'))))
     total = len(ordered)
     started = datetime.datetime.now()
     groups: dict[str, list[str]] = {}
@@ -1230,7 +1257,7 @@ def export_feedback_bundles(session: ApiSession,
             raise BatchCancelled('已取消导出反馈。')
         class_name = str(bundle.get('class') or '未分类')
         title = str(bundle.get('title') or lesson_feedback_title(
-            int(bundle.get('lesson') or 0)))
+            _int_or(bundle.get('lesson'))))
         emit(phase='start', index=index, done=index - 1, total=total,
              kind='feedback', name=title, group=class_name,
              elapsed=(datetime.datetime.now() - started).total_seconds())

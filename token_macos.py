@@ -86,9 +86,12 @@ def _bundle_executable(app: Path) -> Path | None:
                 return candidate
     except (OSError, plistlib.InvalidFileException, ValueError):
         pass
-    for candidate in macos.iterdir():
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return candidate
+    try:
+        for candidate in macos.iterdir():
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return candidate
+    except OSError:
+        return None
     return None
 
 
@@ -232,7 +235,16 @@ class CDPClient:
         self._responses: dict[int, dict[str, Any]] = {}
         self._condition = threading.Condition()
         self._closed = False
-        self._handshake(parsed.hostname, parsed.port or 80, parsed.path)
+        try:
+            self._handshake(parsed.hostname, parsed.port or 80, parsed.path)
+        except BaseException:
+            # 握手失败时构造函数不会返回，调用方拿不到 client 来 close()；
+            # 在这里关掉 socket，避免每次失败泄漏一个连接。
+            try:
+                self._socket.close()
+            except OSError:
+                pass
+            raise
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
 
@@ -310,7 +322,8 @@ class CDPClient:
                         self._responses[message_id] = message
                         self._condition.notify_all()
                     continue
-        except (OSError, CDPError, json.JSONDecodeError):
+        except (OSError, CDPError, json.JSONDecodeError,
+                UnicodeDecodeError):
             pass
         with self._condition:
             self._closed = True

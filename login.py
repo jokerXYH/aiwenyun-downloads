@@ -262,7 +262,7 @@ def _post_json(base_url: str, path: str, payload: dict[str, Any],
         response = connection.getresponse()
         status = response.status
         raw = response.read(_MAX_LOGIN_RESPONSE_BYTES + 1)
-    except OSError as error:
+    except (OSError, http.client.HTTPException) as error:
         raise LoginError('登录请求失败（网络）：%s' % scrub(error)) from error
     finally:
         connection.close()
@@ -284,6 +284,8 @@ def _friendly_error(resp: dict[str, Any], password: str) -> LoginError:
     """把服务端错误转成可读、脱敏的 LoginError。"""
 
     obj = resp.get('obj') or {}
+    if not isinstance(obj, dict):
+        obj = {}
     message = scrub(resp.get('msg') or '', password)
     code = resp.get('code')
     if not message:
@@ -319,12 +321,16 @@ def do_login(login_name: str, password: str, mytype: str = 'teacher',
     resp = _post_json(base_url, LOGIN_PATH, payload)
     code = resp.get('code')
     obj = resp.get('obj') or {}
+    if not isinstance(obj, dict):
+        obj = {}
     token = obj.get('access_token') or obj.get('token')
 
     if not ((code == 0 or code is None) and token):
         raise _friendly_error(resp, password)
 
     my_org = obj.get('myOrg') or {}
+    if not isinstance(my_org, dict):
+        my_org = {}
     return LoginResult(
         token=token,
         login_name=login_name,

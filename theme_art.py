@@ -221,7 +221,7 @@ def load_user_asset(name: str):
     try:
         with Image.open(user_asset_path(name)) as source:
             return source.convert('RGBA')
-    except (OSError, ValueError):
+    except (OSError, ValueError, Image.DecompressionBombError):
         return None
 
 

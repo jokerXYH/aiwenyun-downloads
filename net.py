@@ -388,6 +388,7 @@ class ApiSession:
     def fetch_live_info(self, ids: list[int],
                         chunk_size: int = 50) -> dict[int, dict[str, Any]]:
         details: dict[int, dict[str, Any]] = {}
+        chunk_size = max(1, int(chunk_size))
         for start in range(0, len(ids), chunk_size):
             chunk = [int(value) for value in ids[start:start + chunk_size]]
             if not chunk:

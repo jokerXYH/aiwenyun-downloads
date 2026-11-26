@@ -35,6 +35,15 @@ class UpdateInstallError(RuntimeError):
     """更新包下载、校验或替换失败。"""
 
 
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """只允许 HTTPS 重定向；避免更新包先被带到明文 HTTP。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlparse(newurl).scheme.lower() != 'https':
+            raise UpdateInstallError('更新地址被重定向到非 HTTPS 地址。')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def parse_sha256_text(text: str) -> str:
     """从标准 sha256sum 输出或带标签的文本里取 64 位十六进制摘要。"""
 
@@ -92,8 +101,10 @@ def _open_url(url: str, timeout: float):
         'Accept': 'application/octet-stream, application/json, */*',
         'Cache-Control': 'no-cache',
     })
-    return urllib.request.urlopen(
-        request, timeout=timeout, context=_ssl_context())
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=_ssl_context()),
+        _HttpsOnlyRedirectHandler())
+    return opener.open(request, timeout=timeout)
 
 
 def download_file(url: str, dest: Path,

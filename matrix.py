@@ -8,7 +8,7 @@ from typing import Any, Iterable
 
 LESSON_PATTERNS = (
     re.compile(r'[-_－—]\s*(\d{1,3})\s*(?:β[123])?\s*$'),
-    re.compile(r'第\s*(\d{1,3})\s*[节课]\s*$'),
+    re.compile(r'第\s*(\d{1,3})\s*(?:节课|节|课)\s*$'),
     re.compile(r'[（(]\s*(\d{1,3})\s*[)）]\s*$'),
 )
 VARIANT_RE = re.compile(r'\s*β[123]\s*$')
@@ -74,7 +74,13 @@ def normalize_items(raw_items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]
         groups = raw.get('groups') or []
         if isinstance(groups, dict):
             groups = list(groups.values())
-        groups = [str(name).strip() for name in groups if str(name).strip()]
+        elif isinstance(groups, str):
+            # 单个班级名不能被逐字符拆开；兼容调用方直接传字符串。
+            groups = [groups]
+        elif not isinstance(groups, (list, tuple, set)):
+            groups = []
+        groups = [str(name).strip() for name in groups
+                  if name is not None and str(name).strip()]
         course = str(raw.get('course') or '').strip() or course_from_topic(topic)
         lesson = raw.get('lesson')
         if isinstance(lesson, str) and lesson.strip().isdigit():
@@ -98,6 +104,15 @@ def normalize_items(raw_items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]
     return items
 
 
+def _sort_stamp(value: Any) -> int:
+    """把 begin/classId 统一成可比较的整数，坏值按 0 处理。"""
+
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def assign_missing_lessons(items: list[dict[str, Any]]) -> None:
     if all(item['lesson'] is not None for item in items):
         return
@@ -106,10 +121,20 @@ def assign_missing_lessons(items: list[dict[str, Any]]) -> None:
         key = item['course'] or item['topic']
         buckets.setdefault(key, []).append(item)
     for bucket in buckets.values():
-        bucket.sort(key=lambda item: (item.get('begin') or 0, item.get('classId') or 0))
-        for index, item in enumerate(bucket, 1):
-            if item['lesson'] is None:
-                item['lesson'] = index
+        bucket.sort(key=lambda item: (_sort_stamp(item.get('begin')),
+                                      _sort_stamp(item.get('classId'))))
+        used = {item['lesson'] for item in bucket
+                if isinstance(item['lesson'], int) and item['lesson'] > 0}
+        candidate = 1
+        for item in bucket:
+            if item['lesson'] is not None:
+                continue
+            # 只用尚未被显式讲次占用的编号，避免自动编号覆盖真实课次。
+            while candidate in used:
+                candidate += 1
+            item['lesson'] = candidate
+            used.add(candidate)
+            candidate += 1
 
 
 def build_matrix(items: list[dict[str, Any]], title: str = '邀请码') -> Matrix:

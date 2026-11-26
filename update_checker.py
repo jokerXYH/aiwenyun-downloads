@@ -40,6 +40,15 @@ class UpdateError(RuntimeError):
     """更新检查失败（网络或返回内容不合法）。"""
 
 
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """只允许 HTTPS 重定向；避免先连到 http:// 再事后拒绝。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlparse(newurl).scheme.lower() != 'https':
+            raise UpdateError('更新地址被重定向到非 HTTPS 地址，已拒绝。')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _walk_payload(payload: Any, depth: int = 0):
     if depth > 5:
         return
@@ -196,9 +205,13 @@ def fetch_update_payload(url: str, timeout: float = REQUEST_TIMEOUT) -> str:
         'Cache-Control': 'no-cache',
     })
     try:
-        with urllib.request.urlopen(
-                request, timeout=timeout, context=_ssl_context()) as response:
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=_ssl_context()),
+            _HttpsOnlyRedirectHandler())
+        with opener.open(request, timeout=timeout) as response:
             data = response.read(2 * 1024 * 1024 + 1)
+    except UpdateError:
+        raise
     except Exception as error:  # noqa: BLE001  网络错误统一给界面友好提示
         raise UpdateError('无法连接更新服务器：%s' % error) from error
     if len(data) > 2 * 1024 * 1024:

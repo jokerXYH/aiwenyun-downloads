@@ -229,10 +229,17 @@ class Cooldown:
         with self._lock:
             self._until = max(self._until, time.monotonic() + seconds)
 
-    def wait(self, cancel_event: threading.Event | None = None) -> None:
+    def wait(self, cancel_event: threading.Event | None = None,
+             deadline: float | None = None) -> None:
         while True:
             with self._lock:
                 remaining = self._until - time.monotonic()
+            if deadline is not None:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return
+                # 冷却不能让单个课堂越过自己的总截止时间。
+                remaining = min(remaining, left)
             if remaining <= 0:
                 return
             if cancel_event is not None:
@@ -286,7 +293,7 @@ def _fetch_one(state: TokenState, row: dict[str, Any], bucket: TokenBucket,
             note = _safe_auth_message(state)
             break
         if cooldown is not None:
-            cooldown.wait(cancel_event)
+            cooldown.wait(cancel_event, deadline=deadline)
             if cancel_event.is_set():
                 note = '已取消'
                 break
@@ -846,9 +853,15 @@ def run_export(options: ExportOptions | None = None,
 
         csv_path = json_path = None
         if options.write_csv:
-            csv_path = _write_csv(path.with_suffix('.csv'), public_results)
+            try:
+                csv_path = _write_csv(path.with_suffix('.csv'), public_results)
+            except (OSError, TypeError, ValueError) as error:
+                _emit(on_event, 'log', 'CSV 写入失败：%s' % redact(error))
         if options.write_json:
-            json_path = _write_json(path.with_suffix('.json'), public_results)
+            try:
+                json_path = _write_json(path.with_suffix('.json'), public_results)
+            except (OSError, TypeError, ValueError) as error:
+                _emit(on_event, 'log', 'JSON 写入失败：%s' % redact(error))
 
         diagnostics_path = None
         if options.diagnostics:
@@ -904,28 +917,42 @@ def run_export(options: ExportOptions | None = None,
 def _write_csv(path: Path, results: list[dict[str, Any]]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name('.%s.tmp%s' % (path.stem, path.suffix))
-    with temp.open('w', encoding='utf-8-sig', newline='') as handle:
-        writer = csv.writer(handle)
-        writer.writerow(['上课时间', '课堂名称', '课堂ID', '课程', '课次',
-                         '邀请码', '状态', '备注'])
-        for item in results:
-            writer.writerow([
-                item.get('date'), item.get('topic'), item.get('classId'),
-                item.get('course'), item.get('lesson'), item.get('code'),
-                '成功' if item.get('code') else '失败', item.get('note'),
-            ])
-    os.replace(temp, path)
+    try:
+        with temp.open('w', encoding='utf-8-sig', newline='') as handle:
+            writer = csv.writer(handle)
+            writer.writerow(['上课时间', '课堂名称', '课堂ID', '课程', '课次',
+                             '邀请码', '状态', '备注'])
+            for item in results:
+                writer.writerow([
+                    item.get('date'), item.get('topic'), item.get('classId'),
+                    item.get('course'), item.get('lesson'), item.get('code'),
+                    '成功' if item.get('code') else '失败', item.get('note'),
+                ])
+        os.replace(temp, path)
+    finally:
+        if temp.exists():
+            try:
+                temp.unlink()
+            except OSError:
+                pass
     return path
 
 
 def _write_json(path: Path, results: list[dict[str, Any]]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name('.%s.tmp%s' % (path.stem, path.suffix))
-    temp.write_text(json.dumps({
-        'exportedAt': datetime.now().isoformat(timespec='seconds'),
-        'items': results,
-    }, ensure_ascii=False, indent=2), encoding='utf-8')
-    os.replace(temp, path)
+    try:
+        temp.write_text(json.dumps({
+            'exportedAt': datetime.now().isoformat(timespec='seconds'),
+            'items': results,
+        }, ensure_ascii=False, indent=2), encoding='utf-8')
+        os.replace(temp, path)
+    finally:
+        if temp.exists():
+            try:
+                temp.unlink()
+            except OSError:
+                pass
     return path
 
 
@@ -933,8 +960,16 @@ def _write_diagnostics(path: Path, payload: dict[str, Any]) -> Path:
     """把本次导出的耗时/失败原因写到 Excel 旁边，方便排查别的机器卡住。"""
 
     target = path.with_name(path.stem + '-诊断.json')
+    target.parent.mkdir(parents=True, exist_ok=True)
     temp = target.with_name('.%s.tmp%s' % (target.stem, target.suffix))
-    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
-                    encoding='utf-8')
-    os.replace(temp, target)
+    try:
+        temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                        encoding='utf-8')
+        os.replace(temp, target)
+    finally:
+        if temp.exists():
+            try:
+                temp.unlink()
+            except OSError:
+                pass
     return target

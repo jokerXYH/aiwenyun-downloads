@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 APP_NAME = '爱问云集成工具'
-APP_VERSION = '2.3.2'
+APP_VERSION = '2.3.3'
 # 爱问云客户端资源版本/完整版本：登录请求头与设备信息共用。
 # 客户端升级后可在这里更新，也可用环境变量临时覆盖，避免直接改代码。
 CLIENT_VERSION = (
@@ -168,14 +168,20 @@ def normalize_base_url(value: str) -> str | None:
         return None
     if '://' not in value:
         value = 'https://' + value
-    parsed = urlparse(value)
-    if parsed.scheme.lower() != 'https' or not parsed.hostname:
+    try:
+        parsed = urlparse(value)
+        if parsed.scheme.lower() != 'https' or not parsed.hostname:
+            return None
+        if parsed.username or parsed.password:
+            return None
+        netloc = parsed.hostname
+        # parsed.port 在端口不是数字（或 IPv6 写法损坏）时会抛 ValueError；
+        # 这里统一按「无效地址」处理，避免环境变量/--base-url 直接把程序打崩。
+        port = parsed.port
+        if port is not None:
+            netloc += ':%d' % port
+    except ValueError:
         return None
-    if parsed.username or parsed.password:
-        return None
-    netloc = parsed.hostname
-    if parsed.port:
-        netloc += ':%d' % parsed.port
     path = parsed.path.rstrip('/')
     return 'https://%s%s/' % (netloc, path)
 
