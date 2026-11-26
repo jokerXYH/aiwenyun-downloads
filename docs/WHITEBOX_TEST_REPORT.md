@@ -23,7 +23,7 @@
 | 测试命令 | `python -m unittest discover -s tests -v` |
 | 打包命令 | `cmd /c "build.bat < nul"` |
 
-本次构建结果：`dist\爱问云集成工具.exe`，21,898,268 字节，构建时间 2026-11-26 11:09:37（PyInstaller 6.20.0 / Python 3.12.10）。
+本次构建结果：`dist\爱问云集成工具.exe`，21,897,999 字节，构建时间 2026-11-26 11:27:12（PyInstaller 6.20.0 / Python 3.12.10）。
 
 从零安装（可照抄）：
 

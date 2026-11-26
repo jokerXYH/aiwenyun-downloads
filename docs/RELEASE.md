@@ -159,6 +159,36 @@ xattr -dr com.apple.quarantine "/Applications/爱问云集成工具.app"
 
 ## 6. 本次发布记录
 
+### v2.3.5 · 2026-11-26
+
+- tag：`v2.3.5`（发布提交 `9440936`）。
+- 内容：白盒审计修复与稳定性加固——课程表缺失课次不再与显式课次撞号、
+  `第N节课` 正确解析、`groups` 字符串不再拆字符；作业/反馈/登录对异常字段
+  类型按缺失处理；板书分页加 200 页上限、`genBs` 缺地址按无板书处理；
+  全局冷却不越过课堂截止时间；CSV/JSON/诊断临时文件清理；更新只允许
+  HTTPS 重定向；macOS 单测兼容修复后重发。
+- 验证：本地 261 项单测通过；Windows 打包版 `--version-file` 返回 `2.3.5`。
+- 构建/发布：`build-release.yml` run `45748929371` **success**；preflight、
+  Windows、macOS arm64、macOS x64 全绿。首次 Publish 因 GitHub Release API
+  未及时关联 tag 失败，重新运行 Publish job 后成功；未改动 CI 配置。
+- Release 资产：
+  - Windows `21,690,018B` / SHA-256
+    `e0d935df87b0cb96209b950e8c87bdd8214d857dc7f5a34a470399035758776d`
+  - macOS arm64 `17,978,916B` / SHA-256
+    `afe823e5d621b7b8fdb7a33531b70c2a5ae714040caf7bbf80023226db31ce7f`
+  - macOS x64 `19,393,358B` / SHA-256
+    `48ccb483db42d7c9e3e61d6d338572d39e6851924c1dd2ba67c799c20b034932`
+  - `macOS-DIAGNOSE.command` `2,423B`。
+- 服务器：`mirror-aiwenyun.yml` run `45749487022` success；三个安装包
+  与 `.sha256` 镜像到 `/downloads/aiwenyun/`，公网 HEAD 全 200，SHA-256
+  与 Release 一致。
+- 站点：`deploy.yml` run `45749465264` success；页面与软件管理卡片
+  v2.3.5，`macOS-README.html` 同步更新并返回 200。
+- 线上验收：下载页版本徽标 `v2.3.5`；Windows 本地包 `--version-file`
+  返回 `2.3.5`；三个 `.sha256` 与 Release 资产一致。
+- 过程记录：`v2.3.3`、`v2.3.4` 因 macOS CI 单测导入/平台兼容问题失败，
+  未生成 Release；按规则递增 patch 为 `v2.3.5`，未强推已推送的 tag。
+
 ### v2.3.2 · 2026-11-26
 
 - tag：`v2.3.2`（发布提交 `b09ee74`）。
