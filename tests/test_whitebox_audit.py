@@ -41,7 +41,10 @@ import theme_art
 import token_macos
 import token_model
 import token_source
-import token_windows
+try:
+    import token_windows
+except Exception:  # pragma: no cover - Windows-only ctypes.WinDLL
+    token_windows = None
 import update_checker
 import update_installer
 
@@ -697,6 +700,7 @@ class TokenModelBranchTests(unittest.TestCase):
         self.assertEqual(token_model.extract_from_bytes(b'no marker'), [])
 
 
+@unittest.skipUnless(token_windows is not None, 'Windows-only module')
 class TokenSourceWindowsTests(unittest.TestCase):
     def test_debug_port_and_client_running(self):
         with patch.object(token_source.urllib.request, 'urlopen') as opened:
@@ -2115,6 +2119,7 @@ class CoverageGapTests(unittest.TestCase):
     def test_token_source_platform_name(self):
         self.assertEqual(token_source.platform_name(), sys.platform)
 
+    @unittest.skipUnless(token_windows is not None, 'Windows-only module')
     def test_token_windows_iter_regions_and_scan_pid(self):
         mbi = token_windows._MBI()
         mbi.BaseAddress = 0x1000
