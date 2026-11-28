@@ -214,7 +214,8 @@ class HttpTransport:
             watchdog.daemon = True
             watchdog.start()
             try:
-                connection.connect()
+                if connection.sock is None:
+                    connection.connect()
                 if connection.sock is not None:
                     connection.sock.settimeout(timeout)
                 connection.request('POST', request_path, body=body,

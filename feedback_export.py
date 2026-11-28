@@ -1056,12 +1056,10 @@ def fetch_feedback_rows(session: ApiSession, record: dict,
     live_info = _live_info(session, record)
     students = _signin_students(
         session, liveclass_id(record), cancel_event=cancel_event)
-    if not students:
-        students = _attend_students(session, rid, cancel_event=cancel_event)
-    if not students:
-        students = _roster_students(
-            session, liveclass_id(record), cancel_event=cancel_event)
     attend = _attend_students(session, rid, cancel_event=cancel_event)
+    if not students:
+        students = attend or _roster_students(
+            session, liveclass_id(record), cancel_event=cancel_event)
     watch = _optional_obj(
         session, WATCH_PATH, {'recordId': rid}, cancel_event=cancel_event)
     teacher_id = record.get('teacher') or live_info.get('teacher') or 0

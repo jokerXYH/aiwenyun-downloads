@@ -418,6 +418,7 @@ def fetch_invites(state: TokenState, rows: list[dict[str, Any]],
     }
     pending = set(futures)
     last_progress = first_started
+    done_count = 0
     try:
         while pending:
             done, pending = wait(pending, timeout=0.5,
@@ -430,8 +431,8 @@ def fetch_invites(state: TokenState, rows: list[dict[str, Any]],
                     record = _fallback_record(rows[index], redact(error))
                 results[index] = record
                 last_progress = time.monotonic()
+                done_count += 1
                 if on_progress is not None:
-                    done_count = sum(1 for item in results if item is not None)
                     on_progress(done_count, len(rows), record)
 
             if cancel_event.is_set():
@@ -491,8 +492,7 @@ def fetch_invites(state: TokenState, rows: list[dict[str, Any]],
             if record.get('code'):
                 retry_recovered += 1
             if on_progress is not None:
-                done_count = sum(1 for item in results if item is not None)
-                on_progress(done_count, len(rows), record)
+                on_progress(len(rows), len(rows), record)
             cancel_event.wait(0.6)
 
     if cancel_event.is_set():
