@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 APP_NAME = '爱问云集成工具'
-APP_VERSION = '2.3.7'
+APP_VERSION = '2.3.8'
 # 爱问云客户端资源版本/完整版本：登录请求头与设备信息共用。
 # 客户端升级后可在这里更新，也可用环境变量临时覆盖，避免直接改代码。
 CLIENT_VERSION = (
@@ -232,25 +232,23 @@ def save_ui_theme(theme: str) -> None:
     save_settings(payload)
 
 
+def default_export_folder() -> Path:
+    home = Path.home()
+    for desktop in (home / 'Desktop', home / 'OneDrive' / 'Desktop'):
+        if desktop.is_dir():
+            return desktop
+    return home / 'Documents'
+
+
 def output_folder() -> Path:
-    """桌面/OneDrive 桌面/Documents 下的「爱问云邀请码」目录。"""
+    """邀请码导出目录，默认直接保存到桌面。"""
 
     env = (os.environ.get(OUTPUT_DIR_ENV) or '').strip()
     if env:
         folder = Path(env).expanduser()
         folder.mkdir(parents=True, exist_ok=True)
         return folder
-    home = Path.home()
-    for desktop in (home / 'Desktop', home / 'OneDrive' / 'Desktop'):
-        if desktop.is_dir():
-            folder = desktop / '爱问云邀请码'
-            try:
-                folder.mkdir(parents=True, exist_ok=True)
-                return folder
-            except OSError:
-                # macOS TCC / 权限受限时退回 Documents
-                continue
-    folder = home / 'Documents' / '爱问云邀请码'
+    folder = default_export_folder()
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 

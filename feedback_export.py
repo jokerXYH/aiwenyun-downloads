@@ -11,6 +11,7 @@ import math
 import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Callable
 
@@ -1143,13 +1144,42 @@ def _component_filename(kind: str, bundle: dict, item: dict) -> str:
         bundle['lesson'])
 
 
-def feedback_component_name(bundle: dict, kind: str) -> str:
+def feedback_component_name(bundle: dict, kind: str, *, flat: bool = False) -> str:
     """展开区显示/导出时使用的单个文件名；缺项返回暂时缺失标记名。"""
 
     item = (bundle.get('components') or {}).get(kind)
     if item is None:
         return _missing_filename(kind)
+    if flat:
+        if kind in (PREVIEW, CONSOLIDATION):
+            label = '课前预习' if kind == PREVIEW else '课后巩固'
+            topic = homework_lesson(item)
+            if topic is not None:
+                return '%s-专题%s.csv' % (label, chinese_number(topic))
+            return '%s.csv' % label
+        class_name = safe_filename(str(bundle.get('class') or '未分类'))
+        return '%s-%d.csv' % (class_name, _int_or(bundle.get('lesson')))
     return _component_filename(kind, bundle, item)
+
+
+def _write_flat_homework_csv(path: Path, item: dict, students: list[dict]
+                             ) -> tuple[Path, int]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    target = path
+    index = 1
+    while True:
+        try:
+            target.touch(exist_ok=False)
+            break
+        except FileExistsError:
+            index += 1
+            target = path.with_name('%s（%d）%s' % (path.stem, index, path.suffix))
+    try:
+        return target, write_homework_csv(target, item, students)
+    except BaseException:
+        with suppress(OSError):
+            target.unlink()
+        raise
 
 
 def _missing_filename(kind: str) -> str:
@@ -1217,7 +1247,8 @@ def export_feedback_bundles(session: ApiSession,
                             out_root: Path,
                             on_event: Callable[[dict], None] | None = None,
                             cancel_event=None,
-                            logger: Callable[[str], None] | None = None
+                            logger: Callable[[str], None] | None = None,
+                            *, flat: bool = False
                             ) -> dict:
     """导出按课次组装好的反馈包。
 
@@ -1246,7 +1277,7 @@ def export_feedback_bundles(session: ApiSession,
     groups: dict[str, list[str]] = {}
     files: list[dict] = []
     failed: list[dict] = []
-    class_dirs = _feedback_class_dirs(
+    class_dirs = {} if flat else _feedback_class_dirs(
         out_root, {str(bundle.get('class') or '未分类')
                    for bundle in ordered})
 
@@ -1260,11 +1291,11 @@ def export_feedback_bundles(session: ApiSession,
              kind='feedback', name=title, group=class_name,
              elapsed=(datetime.datetime.now() - started).total_seconds())
         try:
-            class_dir = class_dirs.get(
-                class_name) or class_output_dir(out_root, class_name)
-            folder = class_dir / sanitize(title)
-            folder.mkdir(parents=True, exist_ok=True)
-            _clean_bundle_folder(folder, bundle)
+            folder = Path(out_root)
+            if not flat:
+                folder = class_dirs[class_name] / sanitize(title)
+                folder.mkdir(parents=True, exist_ok=True)
+                _clean_bundle_folder(folder, bundle)
             statuses: list[dict] = []
             total_rows = 0
             selected = bundle.get('selected')
@@ -1286,20 +1317,21 @@ def export_feedback_bundles(session: ApiSession,
                     })
                     continue
                 try:
+                    name = feedback_component_name(bundle, kind, flat=flat)
+                    path = folder / name
                     if kind == HISTORY:
                         rows = fetch_feedback_rows(
                             session, item, class_name,
                             cancel_event=cancel_event)
-                        name = feedback_component_name(bundle, kind)
-                        path = folder / name
                         count = write_feedback_csv(path, rows)
                     else:
                         data = fetch_scores(session, str(
                             item.get('zuoyeId') or item.get('id') or ''))
                         students = data.get('students') or []
-                        name = feedback_component_name(bundle, kind)
-                        path = folder / name
-                        count = write_homework_csv(path, item, students)
+                        if flat:
+                            path, count = _write_flat_homework_csv(path, item, students)
+                        else:
+                            count = write_homework_csv(path, item, students)
                 except (BatchCancelled, TokenExpired):
                     raise
                 except Exception as error:  # noqa: BLE001

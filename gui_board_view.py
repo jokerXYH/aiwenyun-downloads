@@ -16,7 +16,7 @@ def build_board_view(app, content, *, font, progress_panel, log_panel):
     ttk.Label(board_head, text='板书导出',
               style='Section.TLabel').pack(side=LEFT)
     ttk.Label(board_head,
-              text='按学期+班级分组 · 只导出所选 · PDF 按学期+班级分文件夹',
+              text='按学期+班级分组 · 所选 PDF 直接保存到指定位置',
               style='Muted.TLabel').pack(side=LEFT, anchor='s',
                                          padx=(app.px(12), 0),
                                          pady=(0, app.px(4)))

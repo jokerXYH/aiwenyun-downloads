@@ -1540,7 +1540,8 @@ def export_class(session: ApiSession, record: dict, out_root: Path,
                  page_workers: int = PAGE_WORKERS,
                  downloader: PageDownloader | None = None,
                  on_page=None, on_phase=None,
-                 poll_delays: tuple[float, ...] = BS_POLL_DELAYS
+                 poll_delays: tuple[float, ...] = BS_POLL_DELAYS,
+                 *, flat: bool = False
                  ) -> Path | None:
     """导出一节课的板书为 PDF，返回 PDF 路径；无板书返回 None。
 
@@ -1561,7 +1562,7 @@ def export_class(session: ApiSession, record: dict, out_root: Path,
     if cancel_event is not None and cancel_event.is_set():
         raise BatchCancelled('已取消板书导出。')
 
-    group = class_output_dir(
+    folder = Path(out_root) if flat else class_output_dir(
         out_root, group_name or class_group(short_desc))
     # 文件名只保留课堂名；同批里出现重名才加「（2）」，不挂课堂编号
     index = int(record.get('_nameIndex') or 1)
@@ -1596,8 +1597,8 @@ def export_class(session: ApiSession, record: dict, out_root: Path,
     pdf_bytes, meta = build_pdf_pages(page_streams)
 
     # 幂等：同名且内容一致 -> 复用；内容变了（同一节课重新导出）-> 直接覆盖
-    group.mkdir(parents=True, exist_ok=True)
-    pdf_path = group / clean_name
+    folder.mkdir(parents=True, exist_ok=True)
+    pdf_path = folder / clean_name
     if pdf_path.exists() and pdf_path.stat().st_size == len(pdf_bytes):
         reused = pdf_path.read_bytes() == pdf_bytes
     else:
@@ -1712,7 +1713,8 @@ def export_records(session: ApiSession, records: list[dict], out_root: Path,
                    max_workers: int = CLASS_WORKERS,
                    page_workers: int = PAGE_WORKERS,
                    on_event=None,
-                   downloader: PageDownloader | None = None) -> dict:
+                   downloader: PageDownloader | None = None,
+                   *, flat: bool = False) -> dict:
     """导出指定的一批课（GUI 勾选流程用），返回汇总。
 
     records 为调用方筛选后的列表（例如 GUI 勾选的条目）；
@@ -1733,6 +1735,8 @@ def export_records(session: ApiSession, records: list[dict], out_root: Path,
     name_seen: dict[str, int] = {}
     for record in records:
         key = sanitize(record.get('shortDesc') or '未命名课堂')
+        if flat:
+            key = key.casefold()
         name_seen[key] = name_seen.get(key, 0) + 1
         record['_nameIndex'] = name_seen[key]
     emit = logger or log
@@ -1778,7 +1782,7 @@ def export_records(session: ApiSession, records: list[dict], out_root: Path,
                         session, record, out_root, sort_mode, logger=class_log,
                         group_name=folder, cancel_event=cancel_event,
                         page_workers=page_workers, downloader=client,
-                        on_page=page_cb, on_phase=phase_cb)
+                        on_page=page_cb, on_phase=phase_cb, flat=flat)
                     break
                 except RateLimitError as error:
                     if attempt:

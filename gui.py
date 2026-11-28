@@ -26,11 +26,12 @@ except ImportError:  # pragma: no cover  打包缺 Pillow 时退回文字符号
     ImageDraw = None
     ImageTk = None
 
-from config import (APP_NAME, APP_VERSION, DEFAULT_BASE_URL, load_settings,
-                    load_ui_theme, open_path, save_settings, save_ui_theme)
+from config import (APP_NAME, APP_VERSION, DEFAULT_BASE_URL, default_export_folder,
+                    load_settings, load_ui_theme, open_path, save_settings,
+                    save_ui_theme)
 from banshu_export import (BatchCancelled,
                            UNCLASSIFIED_GROUP, class_group,
-                           default_out_root, enrich_record_groups,
+                           enrich_record_groups,
                            export_records, fetch_class_names, fetch_records,
                            group_board_records, group_display_names,
                            group_sort_key, ordered_group_names,
@@ -44,7 +45,6 @@ from net import ApiSession, TokenExpired
 from feedback_export import (COMPONENT_ORDER, CONSOLIDATION, PREVIEW,
                              FeedbackCancelled, build_feedback_bundles,
                              feedback_component_name,
-                             default_out_root as feedback_out_root,
                              export_feedback_bundles)
 from homework_export import (HomeworkCancelled, fetch_homeworks,
                              homework_group, homework_time, homework_title)
@@ -951,7 +951,7 @@ class App:
         self.board_records: list[dict] = []       # 「列出板书」的结果
         self.board_checked: dict[str, bool] = {}  # 课堂键 -> 是否勾选
         self.board_class_names: list[str] = []    # 爱问云班级列表
-        self.board_group_of: dict[int, str] = {}  # id(记录) -> 班级名（导出分文件夹用）
+        self.board_group_of: dict[int, str] = {}  # id(记录) -> 班级名
         self.board_groups: dict[str, list[dict]] = {}
         self.board_group_labels: dict[str, str] = {}   # 官方班名 -> 26秋7MA+31
         self.board_display_order: list[str] = []       # 官方班名，按学期排好
@@ -961,7 +961,7 @@ class App:
         self._board_menu_ref = None
         self._pending_list = False                # 忙碌中收到的时间段切换请求
 
-        # 反馈文件导出：历史课堂专注度反馈，按班级归档
+        # 反馈文件导出：历史课堂专注度反馈
         self.feedback_range = StringVar(value='最近30天')
         self.feedback_from = StringVar(
             value=(today - datetime.timedelta(days=29)).strftime('%Y-%m-%d'))
@@ -2167,8 +2167,7 @@ class App:
                                       command=self.open_last,
                                       state='disabled')
         self.open_button.pack(side=LEFT, padx=(self.px(4), 0))
-        ttk.Label(footer, text='保存位置：导出时选择 · 默认「爱问云邀请码」/'
-                               '「爱问云板书导出」/「爱问云反馈文件」',
+        ttk.Label(footer, text='邀请码默认保存到桌面 · 板书和反馈导出时选择位置',
                   style='Footer.TLabel').pack(side=RIGHT)
 
         self._base_title = '%s %s' % (APP_NAME, APP_VERSION)
@@ -3171,8 +3170,8 @@ class App:
                 '未勾选任何条目时不会导出（也不会整段全量导出）。')
             return
         # 批量下载：先选保存位置
-        initial = default_out_root()
-        initial_dir = initial if initial.exists() else Path.home() / 'Desktop'
+        initial = default_export_folder()
+        initial_dir = initial if initial.is_dir() else Path.home()
         chosen = filedialog.askdirectory(
             title='选择板书保存位置', initialdir=str(initial_dir),
             mustexist=False)
@@ -3204,7 +3203,7 @@ class App:
         self.worker.start()
 
     def _group_for_record(self, record: dict) -> str:
-        """板书导出时的班级文件夹名：与列表里看到的分组保持一致。"""
+        """板书导出汇总使用列表分组的班级名。"""
 
         group = self.board_group_of.get(id(record))
         return group or class_group(record.get('shortDesc') or '')
@@ -3225,7 +3224,7 @@ class App:
                     session, records, out_root, sort_mode,
                     logger=self._thread_log,
                     cancel_event=self.cancel_event,
-                    group_of=self._group_for_record,
+                    group_of=self._group_for_record, flat=True,
                     on_event=lambda payload: self._post(
                         'banshu_event', payload))
             except TokenExpired:
@@ -3792,7 +3791,7 @@ class App:
                 % len(entries))
             self.status.set('%s；勾选后导出。' % meta)
             self.append_log(
-                '%s；按班级分文件夹，每个课次输出「第X节课反馈」。'
+                '%s；勾选的 CSV 直接保存到所选位置。'
                 % meta, target='feedback')
             for name in self.feedback_class_order:
                 rows = [entry for entry in entries if entry['class'] == name]
@@ -3875,7 +3874,7 @@ class App:
     def _feedback_child_values(self, entry: dict, kind: str) -> tuple:
         selected = self._feedback_file_selected(entry['key'], kind)
         item = (entry.get('components') or {}).get(kind)
-        name = feedback_component_name(entry, kind)
+        name = feedback_component_name(entry, kind, flat=True)
         if item is None:
             state = '暂时缺失'
             name = '⚠ ' + name
@@ -4268,8 +4267,8 @@ class App:
         unselected = sum(
             len(set(COMPONENT_ORDER) - set(bundle['selected']))
             for bundle in prepared)
-        initial = feedback_out_root()
-        initial_dir = initial if initial.exists() else Path.home() / 'Desktop'
+        initial = default_export_folder()
+        initial_dir = initial if initial.is_dir() else Path.home()
         chosen = filedialog.askdirectory(
             title='选择反馈文件保存位置', initialdir=str(initial_dir),
             mustexist=False)
@@ -4284,7 +4283,7 @@ class App:
         self.feedback_progress.begin(
             '正在导出反馈文件', '正在读取课前预习、课后巩固与课堂权限…',
             indeterminate=True,
-            hint='按班级分文件夹 · 每个课次生成「第X节课反馈」')
+            hint='每个勾选项单独保存为 CSV')
         self.status.set(
             '正在导出 %d 个课次反馈（预习 %d / 巩固 %d / 权限 %d，'
             '缺失 %d，未选 %d）…'
@@ -4310,7 +4309,7 @@ class App:
                     on_event=lambda payload: self._post(
                         'feedback_event', payload),
                     cancel_event=self.cancel_event,
-                    logger=self._thread_feedback_log)
+                    logger=self._thread_feedback_log, flat=True)
             except TokenExpired:
                 if attempt == 0 and self._renew_board_token():
                     self._thread_feedback_log('登录态已过期，已自动重新获取，继续…')
@@ -4386,7 +4385,7 @@ class App:
             self.append_log(
                 '    [%s] %s（%s，共 %d 行）' % (
                     content.get('group') or '-',
-                    Path(content.get('path', '')).name, state,
+                    content.get('title') or '-', state,
                     content.get('rows', 0)),
                 target='feedback')
         if failed:
@@ -4714,7 +4713,7 @@ class App:
             '【邀请码导出】\n\n'
             '1. 打开并登录爱问云（老师账号），点「导出邀请码 Excel」。\n\n'
             '2. 工具读取登录态，自动拉取「实时课堂」，并发读取邀请码，'
-            '按「课程 × 第几节课」排成 Excel，文件保存在桌面「爱问云邀请码」。'
+            '按「课程 × 第几节课」排成 Excel，默认直接保存到桌面。'
             '导出进度显示在本页主按钮下方。\n\n'
             '【板书导出】\n\n'
             '1. 打开程序会自动只读检测本机已登录的爱问云客户端：检测到就直接'
@@ -4731,8 +4730,8 @@ class App:
             '窗口放不下的班收进右侧「更多」里，点「更多」按学期分组选择；'
             '勾选别的班不会丢掉已经勾好的课。\n\n'
             '5. 点「导出所选板书」时只导出勾选项，未勾选会被拦截，不会回退为'
-            '全量导出；随后弹出保存位置。PDF 按「学期+班级」分文件夹'
-            '（如「26秋7MA+31」），文件名与课堂名一致。'
+            '全量导出；随后弹出保存位置。PDF 直接保存到所选位置，'
+            '文件名与课堂名一致。'
             '排序可选「按上课顺序」或「按板书类型」。\n\n'
             '6. 导出时右下角弹出进度卡片：总百分比、当前第几节、当前课堂的'
             '第几页、已用时间和预计剩余时间，旁边有「取消」。完成后显示'
@@ -4744,7 +4743,7 @@ class App:
             '【反馈文件导出】\n\n'
             '连上登录态后自动列出所选时间段的课堂和作业，按班级分组并按时间'
             '排序。勾选后点「导出所选反馈」：课堂生成与爱问云「历史课堂权限」'
-            '一致的学生统计 CSV，作业生成原有成绩明细 CSV；两者按班级分文件夹。'
+            '一致的学生统计 CSV，作业生成原有成绩明细 CSV；文件直接保存到所选位置。'
             '课堂 CSV 包含出勤、学习/直播/互动时长、签到、随堂测、积分、举手、'
             '观看历史课堂、进入/离开时间等字段。\n\n'
             '安全说明：token / 密码只在本进程内存中使用，不写日志、不落盘；'
