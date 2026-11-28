@@ -28,7 +28,7 @@ except ImportError:  # pragma: no cover  打包缺 Pillow 时退回文字符号
 
 from config import (APP_NAME, APP_VERSION, DEFAULT_BASE_URL, load_settings,
                     load_ui_theme, open_path, save_settings, save_ui_theme)
-from banshu_export import (BatchCancelled, RANGE_PRESETS,
+from banshu_export import (BatchCancelled,
                            UNCLASSIFIED_GROUP, class_group,
                            default_out_root, enrich_record_groups,
                            export_records, fetch_class_names, fetch_records,
@@ -37,6 +37,8 @@ from banshu_export import (BatchCancelled, RANGE_PRESETS,
                            record_matches_class_list, record_time,
                            resolve_range, scan_token,
                            sort_records_newest_first, term_label)
+from gui_board_view import build_board_view
+from gui_feedback_view import build_feedback_view
 from login import LoginError, LoginResult, do_login
 from net import ApiSession, TokenExpired
 from feedback_export import (COMPONENT_ORDER, CONSOLIDATION, PREVIEW,
@@ -1840,6 +1842,7 @@ class App:
         self.hero.bind('<Configure>', self._on_hero_resize)
         self._hero_photo = None
         self._hero_logo_photo = None
+        self._hero_mascot_photo = None
         self._hero_size = (0, 0)
         self._hero_render_job = None
 
@@ -1894,6 +1897,18 @@ class App:
             return
         self._hero_photo = photo
         self.hero.create_image(0, 0, anchor='nw', image=photo, tags='hero')
+        if self.theme_key == 'dog' and self._hero_mascot_photo is None:
+            mascot = render_user_asset(
+                'user_asset_04.png', (self.px(56), self.px(56)),
+                palette_for('dog')['HERO_FROM'],
+                crop=(0.26, 0.30, 0.74, 0.80))
+            if mascot is not None:
+                self._hero_mascot_photo = ImageTk.PhotoImage(mascot)
+        if (self.theme_key == 'dog' and self._hero_mascot_photo is not None
+                and width >= self.px(760)):
+            self.hero.create_image(width - self.px(106), height / 2,
+                                   anchor='e', image=self._hero_mascot_photo,
+                                   tags='hero')
 
         pad = self.px(24)
         logo_size = self.px(32)
@@ -2114,410 +2129,10 @@ class App:
         self.invite_log.frame.grid(row=1, column=0, sticky='nsew',
                                    pady=(self.px(16), 0))
 
-        # ---------- 板书视图 ----------
-        board_outer, board = self._card(content, padding=self.px(16))
-        board_outer.grid(row=0, column=0, sticky='nsew')
-        board_outer.grid_remove()
-        self.board_view = board_outer
-
-        board_head = ttk.Frame(board, style='Card.TFrame')
-        board_head.grid(row=0, column=0, sticky='ew')
-        ttk.Label(board_head, text='板书导出',
-                  style='Section.TLabel').pack(side=LEFT)
-        ttk.Label(board_head,
-                  text='按学期+班级分组 · 只导出所选 · PDF 按学期+班级分文件夹',
-                  style='Muted.TLabel').pack(side=LEFT, anchor='s',
-                                             padx=(self.px(12), 0),
-                                             pady=(0, self.px(4)))
-
-        # 登录态和登录操作挪到页头右侧：以前它们和查询条件挤在工具栏同
-        # 一行里，状态字被按钮、说明文字切成碎片，字号又小，看不清。
-        self.login_row = ttk.Frame(board_head, style='Card.TFrame')
-        self.login_row.pack(side=RIGHT, anchor='n', pady=(self.px(4), 0))
-        self.login_badge = tk.Label(
-            self.login_row, text='正在检测本机登录…', bg=CARD, fg=TEXT_MUTED,
-            font=(FONT, 10))
-        self.login_badge.pack(side=LEFT, padx=(0, self.px(12)))
-        self.rescan_button = ttk.Button(
-            self.login_row, text='重新检测', style='Secondary.TButton',
-            command=lambda: self._start_client_scan(manual=True))
-        self.rescan_button.pack(side=LEFT)
-        self.use_account_link = tk.Label(
-            self.login_row, text='改用账号密码登录', bg=CARD, fg=LINK,
-            activeforeground=ACCENT_DARK, font=(FONT, 10),
-            cursor='hand2')
-        self.use_account_link.bind(
-            '<Button-1>', lambda _e: self._enable_account_login())
-
-        toolbar = tk.Frame(board, bg=SURFACE, bd=0,
-                           highlightbackground=BORDER, highlightthickness=1)
-        toolbar.grid(row=1, column=0, sticky='ew', pady=(self.px(16), 0))
-        toolbar_body = ttk.Frame(toolbar, style='Surface.TFrame',
-                                 padding=(self.px(16), self.px(12)))
-        toolbar_body.pack(fill=X)
-
-        # 查询条件只占一行：时间段 / 排序 ｜ 自定义日期，组与组之间用竖线
-        # 断开，免得「排序」和「自定义」连成一串读不出边界。
-        range_row = ttk.Frame(toolbar_body, style='Surface.TFrame')
-        range_row.pack(fill=X)
-        ttk.Label(range_row, text='时间段',
-                  style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.range_box = ttk.Combobox(range_row, textvariable=self.board_range,
-                                      values=list(RANGE_PRESETS),
-                                      state='readonly', width=12)
-        self.range_box.pack(side=LEFT, padx=(self.px(8), self.px(16)))
-        self.range_box.bind('<<ComboboxSelected>>',
-                            lambda _e: self._auto_list_boards())
-        ttk.Label(range_row, text='排序',
-                  style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.sort_box = ttk.Combobox(range_row, textvariable=self.board_sort,
-                                     values=['按上课顺序', '按板书类型'],
-                                     state='readonly', width=11)
-        self.sort_box.pack(side=LEFT, padx=(self.px(8), self.px(16)))
-        tk.Frame(range_row, bg=BORDER_STRONG, width=1).pack(
-            side=LEFT, fill=Y, pady=self.px(4), padx=(0, self.px(16)))
-        ttk.Label(range_row, text='自定义日期',
-                  style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.from_entry = ttk.Entry(range_row, textvariable=self.board_from,
-                                    width=11)
-        self.from_entry.pack(side=LEFT, padx=(self.px(8), self.px(8)))
-        ttk.Label(range_row, text='至',
-                  style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.to_entry = ttk.Entry(range_row, textvariable=self.board_to,
-                                  width=11)
-        self.to_entry.pack(side=LEFT, padx=(self.px(8), 0))
-        self.from_entry.bind('<Return>', lambda _e: self._auto_list_boards())
-        self.to_entry.bind('<Return>', lambda _e: self._auto_list_boards())
-        self.board_list_button = ttk.Button(range_row, text='列出板书',
-                                            style='Secondary.TButton',
-                                            command=self.on_list_boards,
-                                            state='disabled')
-        self.board_list_button.pack(side=RIGHT, padx=(self.px(16), 0))
-
-        # 状态说明单独占一行：它时不时会变长（例如提示可能挤下线客户端），
-        # 塞进查询行里就会把按钮顶出可视区域，只剩半截字。
-        self.hint_label = ttk.Label(
-            toolbar_body, textvariable=self.client_hint,
-            style='SurfaceHint.TLabel', justify=LEFT,
-            wraplength=self.px(520))
-        self.hint_label.pack(fill=X, pady=(self.px(8), 0))
-
-        def _fit_hint(event) -> None:
-            width = max(self.px(240), int(event.width) - self.px(36))
-            current = int(self.hint_label.cget('wraplength') or 0)
-            if abs(width - current) > self.px(8):
-                self.hint_label.configure(wraplength=width)
-
-        toolbar_body.bind('<Configure>', _fit_hint)
-
-        # 账号密码输入行：只有真的要账号密码时才出现，免密码模式不占地方
-        self.account_row = ttk.Frame(toolbar_body, style='Surface.TFrame')
-        ttk.Label(self.account_row, text='账号',
-                  style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.name_entry = ttk.Entry(self.account_row,
-                                    textvariable=self.login_name, width=15)
-        self.name_entry.pack(side=LEFT, padx=(self.px(8), self.px(16)))
-        ttk.Label(self.account_row, text='密码',
-                  style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.pass_entry = ttk.Entry(self.account_row,
-                                    textvariable=self.login_pass,
-                                    width=15, show='*')
-        self.pass_entry.pack(side=LEFT, padx=(self.px(8), self.px(16)))
-        self.login_button = ttk.Button(self.account_row, text='登录',
-                                       style='Secondary.TButton',
-                                       command=self.on_login)
-        self.login_button.pack(side=LEFT)
-        self.name_entry.bind('<Return>',
-                             lambda _e: self.pass_entry.focus_set())
-        self.pass_entry.bind('<Return>', lambda _e: self.on_login())
-
-        # 进度改成独立弹窗，卡片里不再留进度行
-        self.board_progress = ProgressPanel(board, self.on_cancel,
-                                            compact=False)
-
-        list_head = ttk.Frame(board, style='Card.TFrame')
-        list_head.grid(row=3, column=0, sticky='ew',
-                       pady=(self.px(12), self.px(8)))
-        ttk.Label(list_head, text='课堂',
-                  style='SectionSmall.TLabel').pack(side=LEFT)
-        ttk.Label(list_head, textvariable=self.board_meta,
-                  style='Faint.TLabel').pack(side=LEFT, padx=(self.px(12), 0))
-        self.clear_button = ttk.Button(list_head, text='清空',
-                                       style='Quiet.TButton',
-                                       command=self.on_clear_boards,
-                                       state='disabled')
-        self.clear_button.pack(side=RIGHT, padx=(self.px(8), 0))
-        self.select_all_button = ttk.Button(list_head, text='全选',
-                                            style='Quiet.TButton',
-                                            command=self.on_select_all_boards,
-                                            state='disabled')
-        self.select_all_button.pack(side=RIGHT, padx=(self.px(8), 0))
-
-        # 班级做成横排按钮：按钮上带学期（26秋7MAA12），窗口放不下时
-        # 多余的收进「更多」菜单，不再固定只显示 8 个。
-        self.board_class_bar = ttk.Frame(board, style='Card.TFrame')
-        self.board_class_bar.grid(row=4, column=0, sticky='ew',
-                                  pady=(0, self.px(8)))
-        self.board_class_bar.bind('<Configure>',
-                                  self._on_board_class_bar_resize)
-        self.board_class_buttons: dict[str, tk.Button] = {}
-        self.board_more_button: tk.Button | None = None
-        self._board_hidden_count = 0
-
-        self.tree_wrap = tk.Frame(board, bg=CARD, bd=0,
-                                  highlightbackground=BORDER,
-                                  highlightthickness=1)
-        # 列表用 grid 抢剩余高度，日志展开时缩的是日志还是列表由权重决定
-        board.columnconfigure(0, weight=1)
-        board.rowconfigure(5, weight=1)
-        self.tree_wrap.grid(row=5, column=0, sticky='nsew')
-        self.board_tree = ttk.Treeview(
-            self.tree_wrap, columns=('title', 'date'),
-            show='tree headings', height=8, selectmode='none',
-            style='Board.Treeview')
-        self.board_tree.heading('#0', text='选择', anchor='center')
-        self.board_tree.heading('title', text='课堂', anchor='w')
-        self.board_tree.heading('date', text='日期', anchor='center')
-        self.board_tree.column('#0', width=self.px(72),
-                               minwidth=self.px(72), anchor='center',
-                               stretch=False)
-        self.board_tree.column('title', width=self.px(780),
-                               minwidth=self.px(380), anchor='w')
-        self.board_tree.column('date', width=self.px(160),
-                               minwidth=self.px(132), anchor='center',
-                               stretch=False)
-        self.board_tree.tag_configure('unchecked', background=CARD,
-                                      foreground=TEXT_DARK)
-        self.board_tree.tag_configure('checked', background=CHECKED_BG,
-                                      foreground=TEXT_DARK)
-        board_scroll = ttk.Scrollbar(self.tree_wrap, orient='vertical',
-                                     command=self.board_tree.yview,
-                                     style='Vertical.TScrollbar')
-        self.board_tree.configure(yscrollcommand=board_scroll.set)
-        self.board_tree.pack(side=LEFT, fill=BOTH, expand=True)
-        board_scroll.pack(side=RIGHT, fill=Y)
-        self.board_tree.bind('<Button-1>', self._on_board_click)
-
-        self.board_empty = tk.Frame(self.tree_wrap, bg=CARD)
-        self.board_empty_image = tk.Label(self.board_empty, bg=CARD, bd=0)
-        self.board_empty_text = tk.Label(
-            self.board_empty,
-            text='还没有课堂 · 选好时间段后点「列出板书」',
-            bg=CARD, fg=TEXT_FAINT, font=(FONT, 10),
-            wraplength=self.px(360), justify='center')
-        self.board_empty_text.pack(pady=(self.px(8), 0))
-        self.board_empty.place(relx=0.5, rely=0.55, anchor='center')
-        self.board_empty.lift()
-
-        board_row = ttk.Frame(board, style='Card.TFrame')
-        board_row.grid(row=6, column=0, sticky='ew', pady=(self.px(12), 0))
-        self.selection_badge = tk.Label(
-            board_row, text='已选 0 节', bg=CARD, fg=TEXT_MUTED,
-            font=(FONT, 10))
-        self.selection_badge.pack(side=LEFT)
-        ttk.Label(board_row, text='点整行勾选 · 换班级不影响已勾选',
-                  style='Faint.TLabel').pack(side=LEFT, padx=(self.px(12), 0))
-        self.board_all_button = ttk.Button(
-            board_row, text='导出所选板书', style='Primary.TButton',
-            command=self.on_export_boards, state='disabled')
-        self.board_all_button.pack(side=RIGHT)
-
-        self.board_log = LogPanel(
-            board, title='板书运行日志',
-            subtitle='登录、清单与导出诊断', height=5,
-            collapsible=True, expanded=False, px=self.px,
-            on_toggle=self.on_toggle_board_log)
-        self.board_log.frame.grid(row=7, column=0, sticky='ew',
-                                  pady=(self.px(12), 0))
-        # 窗口被拖矮时把日志收起来，给列表腾高度
-        board.bind('<Configure>', self._fit_board_layout)
-
-        # ---------- 反馈文件导出视图 ----------
-        feedback_outer, feedback = self._card(content, padding=self.px(16))
-        feedback_outer.grid(row=0, column=0, sticky='nsew')
-        feedback_outer.grid_remove()
-        self.feedback_view = feedback_outer
-        feedback.columnconfigure(0, weight=1)
-
-        feedback_head = ttk.Frame(feedback, style='Card.TFrame')
-        feedback_head.grid(row=0, column=0, sticky='ew')
-        ttk.Label(feedback_head, text='反馈文件导出',
-                  style='Section.TLabel').pack(side=LEFT)
-        ttk.Label(feedback_head,
-                  text='展开课次选文件 · 按班级和课次归档',
-                  style='Muted.TLabel').pack(side=LEFT, anchor='s',
-                                             padx=(self.px(12), 0),
-                                             pady=(0, self.px(4)))
-        self.feedback_badge = tk.Label(
-            feedback_head, text='○ 等待登录态', bg=CARD, fg=TEXT_MUTED,
-            font=(FONT, 10))
-        self.feedback_badge.pack(side=RIGHT)
-
-        feedback_toolbar = tk.Frame(feedback, bg=SURFACE, bd=0,
-                                    highlightbackground=BORDER,
-                                    highlightthickness=1)
-        feedback_toolbar.grid(row=1, column=0, sticky='ew',
-                              pady=(self.px(16), 0))
-        feedback_body = ttk.Frame(feedback_toolbar, style='Surface.TFrame',
-                                  padding=(self.px(16), self.px(12)))
-        feedback_body.pack(fill=X)
-
-        feedback_range_row = ttk.Frame(feedback_body, style='Surface.TFrame')
-        feedback_range_row.pack(fill=X)
-        ttk.Label(feedback_range_row, text='时间段',
-                  style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.feedback_range_box = ttk.Combobox(
-            feedback_range_row, textvariable=self.feedback_range,
-            values=list(RANGE_PRESETS), state='readonly', width=12)
-        self.feedback_range_box.pack(side=LEFT,
-                                     padx=(self.px(8), self.px(16)))
-        self.feedback_range_box.bind(
-            '<<ComboboxSelected>>', lambda _e: self._auto_list_feedbacks())
-        tk.Frame(feedback_range_row, bg=BORDER_STRONG, width=1).pack(
-            side=LEFT, fill=Y, pady=self.px(4), padx=(0, self.px(16)))
-        ttk.Label(feedback_range_row, text='自定义日期',
-                  style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.feedback_from_entry = ttk.Entry(
-            feedback_range_row, textvariable=self.feedback_from, width=11)
-        self.feedback_from_entry.pack(side=LEFT, padx=(self.px(8), self.px(8)))
-        ttk.Label(feedback_range_row, text='至',
-                  style='SurfaceMuted.TLabel').pack(side=LEFT)
-        self.feedback_to_entry = ttk.Entry(
-            feedback_range_row, textvariable=self.feedback_to, width=11)
-        self.feedback_to_entry.pack(side=LEFT, padx=(self.px(8), 0))
-        self.feedback_from_entry.bind(
-            '<Return>', lambda _e: self._auto_list_feedbacks())
-        self.feedback_to_entry.bind(
-            '<Return>', lambda _e: self._auto_list_feedbacks())
-        self.feedback_list_button = ttk.Button(
-            feedback_range_row, text='列出反馈', style='Secondary.TButton',
-            command=self.on_list_feedbacks, state='disabled')
-        self.feedback_list_button.pack(side=RIGHT, padx=(self.px(16), 0))
-
-        feedback_filter_row = ttk.Frame(feedback_body, style='Surface.TFrame')
-        feedback_filter_row.pack(fill=X, pady=(self.px(8), 0))
-        ttk.Label(feedback_filter_row, text='班级',
-                  style='SurfaceMuted.TLabel').pack(side=LEFT)
-        # 反馈页也把班级做成横排按钮：每个班一眼能点，不再只藏在下拉框里。
-        self.feedback_class_bar = ttk.Frame(
-            feedback_filter_row, style='Surface.TFrame')
-        self.feedback_class_bar.pack(
-            side=LEFT, fill=X, expand=True, padx=(self.px(8), 0))
-        self.feedback_class_bar.bind(
-            '<Configure>', self._on_feedback_class_bar_resize)
-        self.feedback_class_buttons = {}
-        self.feedback_more_button = None
-        self._feedback_hidden_count = 0
-        self.feedback_class_hint = ttk.Label(
-            feedback_filter_row, text='全部班级 · 按时间降序',
-            style='SurfaceFaint.TLabel')
-        self.feedback_class_hint.pack(side=RIGHT, padx=(self.px(12), 0))
-
-        self.feedback_hint = ttk.Label(
-            feedback_body, textvariable=self.client_hint,
-            style='SurfaceHint.TLabel', justify=LEFT,
-            wraplength=self.px(520))
-        self.feedback_hint.pack(fill=X, pady=(self.px(8), 0))
-
-        # 进度用独立弹窗，不占列表高度
-        self.feedback_progress = ProgressPanel(feedback, self.on_cancel,
-                                               compact=False)
-
-        feedback_list_head = ttk.Frame(feedback, style='Card.TFrame')
-        feedback_list_head.grid(row=2, column=0, sticky='ew',
-                                pady=(self.px(12), self.px(8)))
-        ttk.Label(feedback_list_head, text='反馈文件',
-                  style='SectionSmall.TLabel').pack(side=LEFT)
-        ttk.Label(feedback_list_head, textvariable=self.feedback_meta,
-                  style='Faint.TLabel').pack(side=LEFT, padx=(self.px(12), 0))
-        self.feedback_clear_button = ttk.Button(
-            feedback_list_head, text='清空', style='Quiet.TButton',
-            command=self.on_clear_feedbacks, state='disabled')
-        self.feedback_clear_button.pack(side=RIGHT, padx=(self.px(8), 0))
-        self.feedback_select_button = ttk.Button(
-            feedback_list_head, text='全选', style='Quiet.TButton',
-            command=self.on_select_all_feedbacks, state='disabled')
-        self.feedback_select_button.pack(side=RIGHT, padx=(self.px(8), 0))
-
-        feedback.rowconfigure(3, weight=1)
-        self.feedback_tree_wrap = tk.Frame(feedback, bg=CARD, bd=0,
-                                           highlightbackground=BORDER,
-                                           highlightthickness=1)
-        self.feedback_tree_wrap.grid(row=3, column=0, sticky='nsew')
-        self.feedback_tree = ttk.Treeview(
-            self.feedback_tree_wrap,
-            columns=('class', 'title', 'date'),
-            show='tree headings', height=9, selectmode='none',
-            style='Board.Treeview')
-        self.feedback_tree.heading('#0', text='选择', anchor='center')
-        self.feedback_tree.heading('class', text='班级', anchor='w')
-        self.feedback_tree.heading('title', text='名称', anchor='w')
-        self.feedback_tree.heading('date', text='时间', anchor='center')
-        self.feedback_tree.column('#0', width=self.px(84),
-                                  minwidth=self.px(84), anchor='center',
-                                  stretch=False)
-        self.feedback_tree.column('class', width=self.px(230),
-                                  minwidth=self.px(150), anchor='w')
-        self.feedback_tree.column('title', width=self.px(500),
-                                  minwidth=self.px(300), anchor='w')
-        self.feedback_tree.column('date', width=self.px(150),
-                                  minwidth=self.px(132), anchor='center',
-                                  stretch=False)
-        for tag, bg, fg, font_size in (
-                ('unchecked', CARD, TEXT_DARK, 10),
-                ('checked', CHECKED_BG, TEXT_DARK, 10),
-                ('child_unchecked', SURFACE, TEXT_BODY, 9),
-                ('child_checked', SURFACE_ALT, TEXT_BODY, 9)):
-            self.feedback_tree.tag_configure(
-                tag, background=bg, foreground=fg, font=(FONT, font_size))
-        feedback_scroll = ttk.Scrollbar(self.feedback_tree_wrap,
-                                        orient='vertical',
-                                        command=self.feedback_tree.yview,
-                                        style='Vertical.TScrollbar')
-        self.feedback_tree.configure(yscrollcommand=feedback_scroll.set)
-        self.feedback_tree.pack(side=LEFT, fill=BOTH, expand=True)
-        feedback_scroll.pack(side=RIGHT, fill=Y)
-        self.feedback_tree.bind('<Button-1>', self._on_feedback_click)
-        self.feedback_tree.bind('<<TreeviewOpen>>',
-                                lambda _e: self._remember_feedback_open(
-                                    self.feedback_tree.focus()))
-        self.feedback_tree.bind('<<TreeviewClose>>',
-                                lambda _e: self._remember_feedback_open(
-                                    self.feedback_tree.focus()))
-
-        self.feedback_empty = tk.Frame(self.feedback_tree_wrap, bg=CARD)
-        self.feedback_empty_image = tk.Label(self.feedback_empty, bg=CARD,
-                                             bd=0)
-        self.feedback_empty_text = tk.Label(
-            self.feedback_empty,
-            text='还没有反馈文件 · 连接登录态后点「列出反馈」',
-            bg=CARD, fg=TEXT_FAINT, font=(FONT, 10),
-            wraplength=self.px(380), justify='center')
-        self.feedback_empty_text.pack(pady=(self.px(8), 0))
-        self.feedback_empty.place(relx=0.5, rely=0.55, anchor='center')
-        self.feedback_empty.lift()
-
-        feedback_row = ttk.Frame(feedback, style='Card.TFrame')
-        feedback_row.grid(row=4, column=0, sticky='ew', pady=(self.px(12), 0))
-        self.feedback_badge_count = tk.Label(
-            feedback_row, text='已选 0 项', bg=CARD, fg=TEXT_MUTED,
-            font=(FONT, 10))
-        self.feedback_badge_count.pack(side=LEFT)
-        ttk.Label(feedback_row, text='点选择列勾选 · 点名称展开 · '
-                                     '每个文件可单独选择',
-                  style='Faint.TLabel').pack(side=LEFT, padx=(self.px(12), 0))
-        self.feedback_export_button = ttk.Button(
-            feedback_row, text='导出所选反馈', style='Primary.TButton',
-            command=self.on_export_feedbacks, state='disabled')
-        self.feedback_export_button.pack(side=RIGHT)
-
-        self.feedback_log = LogPanel(
-            feedback, title='反馈运行日志',
-            subtitle='课堂权限、作业成绩与导出诊断', height=5,
-            collapsible=True, expanded=False, px=self.px,
-            on_toggle=self.on_toggle_feedback_log)
-        self.feedback_log.frame.grid(row=5, column=0, sticky='ew',
-                                     pady=(self.px(12), 0))
+        build_board_view(self, content, font=FONT,
+                         progress_panel=ProgressPanel, log_panel=LogPanel)
+        build_feedback_view(self, content, font=FONT,
+                            progress_panel=ProgressPanel, log_panel=LogPanel)
 
         # ---------- 状态 / 页脚 ----------
         # 先占住窗口底部，再让内容区拿剩余高度：窗口再矮，底部主按钮
@@ -2530,6 +2145,21 @@ class App:
                         before=self.content)
         ttk.Label(status_row, textvariable=self.status,
                   style='Status.TLabel').pack(side=LEFT)
+        self.export_results: dict[str, tuple[str, Path | None]] = {}
+        self.export_result_row = ttk.Frame(outer)
+        self.export_result_detail = StringVar(master=self.root)
+        self.export_result_folder = StringVar(master=self.root)
+        ttk.Label(self.export_result_row,
+                  textvariable=self.export_result_detail).pack(side=LEFT)
+        self.export_folder_button = ttk.Button(
+            self.export_result_row, text='打开输出目录',
+            style='FooterQuiet.TButton', command=self._open_export_folder)
+        self.export_folder_button.pack(side=RIGHT)
+        tk.Entry(self.export_result_row, textvariable=self.export_result_folder,
+                 state='readonly', readonlybackground=CARD, fg=TEXT_DARK,
+                 bd=0, highlightthickness=1, highlightbackground=BORDER,
+                 highlightcolor=ACCENT_TEXT, width=1).pack(
+                     side=LEFT, fill=X, expand=True, padx=self.px(10))
         ttk.Button(footer, text='使用说明', style='FooterQuiet.TButton',
                    command=self.show_help).pack(side=LEFT)
         self.open_button = ttk.Button(footer, text='打开上次文件',
@@ -2567,6 +2197,37 @@ class App:
                 widget.grid(row=0, column=0, sticky='nsew')
             else:
                 widget.grid_remove()
+        self._refresh_export_result()
+
+    def _show_export_result(self, view: str, detail: str,
+                            folder: Path | None) -> None:
+        self.export_results[view] = (detail, folder)
+        if self.view == view:
+            self._refresh_export_result()
+
+    def _refresh_export_result(self) -> None:
+        result = self.export_results.get(self.view)
+        if result is None:
+            self.export_result_row.pack_forget()
+            return
+        detail, folder = result
+        self.export_result_detail.set('上次导出 · ' + detail)
+        self.export_result_folder.set(str(folder) if folder else '无输出目录')
+        self.export_folder_button.configure(
+            state='normal' if folder and folder.is_dir() else 'disabled')
+        self.export_result_row.pack(side='bottom', fill=X,
+                                    pady=(self.px(8), 0), before=self.content)
+
+    def _open_export_folder(self) -> None:
+        result = self.export_results.get(self.view)
+        folder = result[1] if result else None
+        try:
+            if folder is None or not folder.is_dir():
+                raise FileNotFoundError('输出目录不存在')
+            open_path(folder)
+        except OSError as error:
+            messagebox.showwarning(APP_NAME, '无法打开输出目录：%s' % error,
+                                   parent=self.root)
 
     # ---------- 邀请码导出流程 ----------
     def on_export(self) -> None:
@@ -3829,6 +3490,9 @@ class App:
         self.last_path = summary.path
         self.invite_running = False
         self.set_busy(False)
+        self._show_export_result(
+            'invite', '成功 %d 条 · 失败 %d 条' % (summary.success, summary.failed),
+            Path(summary.path).parent)
         self.invite_progress.complete(
             '邀请码导出完成',
             '成功 %d / %d · 用时 %.1fs' % (
@@ -3873,12 +3537,16 @@ class App:
         groups = payload.get('groups') or {}
         failed = payload.get('failed') or []
         total_files = sum(len(paths) for paths in groups.values())
+        out_root = Path(payload['out_root']) if payload.get('out_root') else None
+        self._show_export_result(
+            'board', '成功 %d 份 PDF · 失败或跳过 %d 节' % (
+                total_files, len(failed)), out_root)
         detail = '%d 份 PDF · %d 个班级%s' % (
             total_files, len(groups),
             ' · %d 节无板书/跳过' % len(failed) if failed else '')
         self.board_progress.complete(
             '板书导出完成', detail,
-            hint='保存位置已打开，可继续切换班级查看')
+            hint='可在板书页查看结果和输出目录')
         self.status.set('板书导出完成：%d 份 PDF，%d 个班级%s' % (
             total_files, len(groups),
             '，%d 节无板书/跳过' % len(failed) if failed else ''))
@@ -3897,8 +3565,7 @@ class App:
             self.append_log('未导出（无板书/生成中/失败）：%d 节：%s'
                             % (len(failed), '、'.join(failed)),
                             target='board')
-        out_root = Path(payload.get('out_root') or '')
-        if out_root.is_dir():
+        if out_root is not None and out_root.is_dir():
             self.append_log('保存位置：%s' % out_root, target='board')
             try:
                 open_path(out_root)
@@ -4693,13 +4360,16 @@ class App:
         files = payload.get('files') or []
         failed = payload.get('failed') or []
         complete = sum(1 for item in files if not item.get('missing'))
-        missing_items = sum(len(item.get('missing') or []) for item in files)
+        out_root = Path(payload['out_root']) if payload.get('out_root') else None
+        self._show_export_result(
+            'feedback', '已保存 %d 个课次 · 其中缺失 %d 个 · 失败 %d 个' % (
+                len(files), len(files) - complete, len(failed)), out_root)
         detail = '%d 个课次反馈（三项齐全 %d · 有缺失 %d）%s' % (
             len(files), complete, len(files) - complete,
             ' · %d 个读取失败' % len(failed) if failed else '')
         self.feedback_progress.complete(
             '反馈文件导出完成', detail,
-            hint='保存位置即将打开，可继续勾选其他课次')
+            hint='可在反馈页查看结果和输出目录')
         self.status.set('反馈文件导出完成：%d 个课次反馈%s' % (
             len(files), '，%d 个失败' % len(failed) if failed else ''))
         self.append_log('', target='feedback')
@@ -4723,8 +4393,7 @@ class App:
             self.append_log('读取失败 %d 项：%s' % (
                 len(failed), '、'.join(str(x.get('title')) for x in failed)),
                 target='feedback')
-        out_root = Path(payload.get('out_root') or '')
-        if out_root.is_dir():
+        if out_root is not None and out_root.is_dir():
             self.append_log('保存位置：%s' % out_root, target='feedback')
             try:
                 open_path(out_root)
